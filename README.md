@@ -8,6 +8,8 @@ Instead, now I use this tool now to create an index/catalog of those drives.
 
 There are probably some parts that I totally messed up and the code might need some facelifting. In my defense, I created this for myself.
 
+![poorman](https://www.islekdemir.com/content/images/poorman.jpg)
+
 ## Notes
 
 1. You need QT Creator (and obviously QT 5.x >) to compile and run this.
