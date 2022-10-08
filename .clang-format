@@ -1,0 +1,9 @@
+﻿---
+BasedOnStyle: LLVM
+IndentWidth: 8
+UseTab: Always
+AllowShortIfStatementsOnASingleLine: false
+IndentCaseLabels: false
+ColumnLimit: 140
+AlignConsecutiveMacros: AcrossEmptyLines
+...
