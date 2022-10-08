@@ -273,6 +273,8 @@ void MainWindow::createPathEntry(QString string) {
     }
     ui->statusbar->showMessage(string);
     if (string == "finished") {
+        delete db;
+        db = new DBManager(this->db_file_path);
         refresh();
     }
 }
