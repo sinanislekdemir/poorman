@@ -71,6 +71,14 @@ int DBManager::getRootId(int cat_id) {
     return -1;
 }
 
+QSqlQuery DBManager::allFiles(int cat_id) {
+    QSqlQuery query;
+    query.prepare("SELECT * FROM direntry WHERE catalog_id = (:catalog_id)");
+    query.bindValue(":catalog_id", cat_id);
+    query.exec();
+    return query;
+}
+
 QSqlQuery DBManager::fetchCatalogs() {
     QSqlQuery query;
     query.prepare("SELECT * FROM catalog ORDER BY name");
@@ -166,9 +174,6 @@ int DBManager::createCatalog(QString name, QString original_path, QString tags) 
 
 int DBManager::createDirEntry(QString name, QString directory, QString full_path, int64_t filesize, QByteArray thumbnail, bool is_directory,
                   int parent_id, int catalog_id) {
-    if (dirEntryExists(full_path)) {
-        return 0;
-    }
     QSqlQuery query;
     query.prepare("INSERT INTO direntry ("
               "directory, full_path, name, "
@@ -216,6 +221,22 @@ DirEntry DBManager::getDirentry(int id) {
 int DBManager::createDirEntry(DirEntry &dir_entry) {
     return createDirEntry(dir_entry.name, dir_entry.directory, dir_entry.full_path, dir_entry.filesize, dir_entry.thumbnail,
                   dir_entry.is_directory, dir_entry.parent_id, dir_entry.catalog_id);
+}
+
+bool DBManager::deleteFiles(int cat_id, QVector<int> files) {
+    QSqlQuery query;
+    query.prepare("DELETE FROM direntry WHERE catalog_id = (:catalog_id) AND ids IN (:ids)");
+    query.bindValue(":catalog_id", cat_id);
+    QStringList x;
+    for (int id : files) {
+        x.append(QString::number(id));
+    }
+    query.bindValue(":ids", x.join(", "));
+    if (!query.exec()) {
+        qDebug() << query.executedQuery();
+        qDebug() << query.lastError();
+    }
+    return true;
 }
 
 void DBManager::createTables() {

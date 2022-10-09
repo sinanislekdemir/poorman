@@ -13,6 +13,7 @@ class Scanner : public QThread {
     void setPath(QString path);
     bool running();
     void setCatalogName(QString cname);
+    void setCatalogId(int id);
 
       signals:
     void setProgressFilename(QString);
@@ -27,6 +28,7 @@ class Scanner : public QThread {
     QString db_path;
     QString catalog_name;
     QLabel *progress_label;
+    int catalog_id;
     void run();
     void processDirectory(QString path);
 };

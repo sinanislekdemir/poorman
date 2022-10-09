@@ -10,6 +10,7 @@ Scanner::Scanner(QObject *parent, QString db_path) : QThread(parent) {
     this->f_running = false;
     this->parent = parent;
     this->db_path = db_path;
+    catalog_id = -1;
 }
 
 void Scanner::setCatalogName(QString cname) { this->catalog_name = cname; }
@@ -17,6 +18,8 @@ void Scanner::setCatalogName(QString cname) { this->catalog_name = cname; }
 void Scanner::setPath(QString path) { this->scan_path = path; }
 
 bool Scanner::running() { return this->f_running; }
+
+void Scanner::setCatalogId(int id) { catalog_id = id; }
 
 void Scanner::run() {
     QDir dir(this->scan_path);
@@ -38,7 +41,9 @@ void Scanner::run() {
 
 void Scanner::processDirectory(QString path) {
     DBManager *db = new DBManager(db_path);
-    int catalog_id = db->createCatalog(catalog_name, path, "");
+    if (catalog_id == -1) {
+        catalog_id = db->createCatalog(catalog_name, path, "");
+    }
     QDir dir(path);
     QDirIterator it(dir, QDirIterator::Subdirectories);
     while (it.hasNext()) {
@@ -54,14 +59,20 @@ void Scanner::processDirectory(QString path) {
             scaled.save(&buffer, "JPG");
         }
         int parent = db->findParent(catalog_id, info.absolutePath());
+        if (info.isDir()) {
+            emit setProgressFilename(filename);
+        }
+        if (db->dirEntryExists(info.absoluteFilePath())) {
+            continue;
+        }
         db->createDirEntry(info.completeBaseName(), info.absolutePath(), info.absoluteFilePath(), info.size(), x, info.isDir(),
-                    parent, catalog_id);
+                   parent, catalog_id);
         if (buffer.isOpen()) {
             buffer.close();
         }
-        emit setProgressFilename(filename);
     }
     delete db;
+    catalog_id = -1;
     emit setProgressFilename("finished");
 }
 

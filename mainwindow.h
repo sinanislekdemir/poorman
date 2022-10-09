@@ -31,6 +31,9 @@ class MainWindow : public QMainWindow {
     void Quit();
     void ShowAbout();
     void createPathEntry(QString string);
+    void catalogContextMenuRequested(QPoint);
+    void rescanCatalog();
+    void deleteCatalog();
 
       private:
     QString db_file_path;

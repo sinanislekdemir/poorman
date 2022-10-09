@@ -43,7 +43,9 @@ class DBManager {
     QSqlQuery fetchCatalogs();
     QSqlQuery fetchDirectoryTree(int cat_id, int parent_id);
     QSqlQuery fetchFiles(int parent_id);
+    QSqlQuery allFiles(int cat_id);
     QSqlQuery searchFiles(QString keyword, bool and_join, int cat_id);
+    bool deleteFiles(int cat_id, QVector<int> files);
     QString formatSQL(QString keyword);
     DirEntry getDirentry(int id);
     int getRootId(int cat_id);

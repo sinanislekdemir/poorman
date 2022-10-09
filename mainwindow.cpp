@@ -49,11 +49,101 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
     driveIcon = QIcon::fromTheme("accessories-dictionary");
     ui->searchCondition->addItem("Search all");
     ui->searchCondition->addItem("Search any");
+    ui->catalogList->setContextMenuPolicy(Qt::CustomContextMenu);
+    connect(ui->catalogList, SIGNAL(customContextMenuRequested(QPoint)), this, SLOT(catalogContextMenuRequested(QPoint)));
     selected_catalog = -2;
     refresh();
 }
 
 void MainWindow::Quit() { QCoreApplication::quit(); }
+
+void MainWindow::catalogContextMenuRequested(QPoint pos) {
+    if (ui->catalogList->currentItem() == NULL) {
+        return;
+    }
+    QMenu *menu = new QMenu(this);
+    QAction *rescanPath = new QAction(tr("Re-scan catalog for new files"), this);
+    QAction *deleteCatalog = new QAction(tr("Re-scan catalog for deleted files"), this);
+    connect(rescanPath, &QAction::triggered, this, &MainWindow::rescanCatalog);
+    connect(deleteCatalog, &QAction::triggered, this, &MainWindow::deleteCatalog);
+    menu->addAction(rescanPath);
+    menu->addAction(deleteCatalog);
+    menu->popup(ui->catalogList->viewport()->mapToGlobal(pos));
+}
+
+void MainWindow::rescanCatalog() {
+    if (this->scanner->running()) {
+        QMessageBox box;
+        box.setText(tr("There is an active scanner running"));
+        box.setIcon(QMessageBox::Warning);
+        box.setStandardButtons(QMessageBox::Ok);
+        box.exec();
+        return;
+    }
+    QString selected = ui->catalogList->currentItem()->text();
+    QString path = "";
+
+    QSqlQuery catalogs = db->fetchCatalogs();
+    while (catalogs.next()) {
+        if (catalogs.value("name").toString() == selected) {
+            path = catalogs.value("original_path").toString();
+            QDir dir(path);
+            if (!dir.exists()) {
+                QMessageBox box;
+                box.setText(tr("Catalog path is not reachable") + "\n" + path);
+                box.setIcon(QMessageBox::Warning);
+                box.setStandardButtons(QMessageBox::Ok);
+                box.exec();
+                return;
+            }
+            ui->statusbar->showMessage(tr("Scanning: ") + path);
+            this->scanner->setPath(path);
+            this->scanner->setCatalogId(catalogs.value("ids").toInt());
+            this->scanner->start();
+        }
+    }
+};
+
+void MainWindow::deleteCatalog() {
+    QString selected = ui->catalogList->currentItem()->text();
+    QString path = "";
+    QVector<int> ids;
+    int catalog_id = -1;
+    QSqlQuery catalogs = db->fetchCatalogs();
+    while (catalogs.next()) {
+        if (catalogs.value("name").toString() == selected) {
+            path = catalogs.value("original_path").toString();
+            QDir dir(path);
+            if (!dir.exists()) {
+                QMessageBox box;
+                box.setText(tr("Catalog path is not reachable") + "\n" + path);
+                box.setIcon(QMessageBox::Warning);
+                box.setStandardButtons(QMessageBox::Ok);
+                box.exec();
+                return;
+            }
+            catalog_id = catalogs.value("ids").toInt();
+            QSqlQuery files = db->allFiles(catalog_id);
+            while (files.next()) {
+                QString full_path = files.value("full_path").toString();
+                QFile fpath(full_path);
+                ui->statusbar->showMessage(tr("Check: ") + full_path);
+                QApplication::processEvents();
+                if (!fpath.exists()) {
+                    ui->statusbar->showMessage(tr("Gone: ") + full_path);
+                    ids.append(files.value("ids").toInt());
+                }
+            }
+        }
+    }
+    if (catalog_id != -1) {
+        if (ids.length() > 0) {
+            ui->statusbar->showMessage(tr("Deleting old entries:") + QString::number(ids.length()));
+            db->deleteFiles(catalog_id, ids);
+            refresh();
+        }
+    }
+};
 
 void MainWindow::ShowAbout() {
     About about;
@@ -91,7 +181,6 @@ void MainWindow::buildTree(QTreeWidgetItem *parent, int catalog_id, int parent_i
         item->setIcon(0, folderIcon);
         ui->statusbar->showMessage(label);
         parent->addChild(item);
-        // buildTree(item, catalog_id, dir_tree.value("ids").toInt());
     }
     QApplication::processEvents();
 }
@@ -152,6 +241,8 @@ void MainWindow::refresh() {
         ui->catalogList->addItem(item);
     }
     ui->directoryTree->clear();
+    ui->fileList->clear();
+    ui->fileList->setRowCount(0);
 }
 
 void MainWindow::SaveAs() {
@@ -174,6 +265,9 @@ void MainWindow::OpenDB() {
     delete db;
     this->db_file_path = filename;
     db = new DBManager(this->db_file_path);
+    delete this->scanner;
+    this->scanner = new Scanner(this, db_file_path);
+    connect(this->scanner, SIGNAL(setProgressFilename(QString)), this, SLOT(createPathEntry(QString)));
     this->refresh();
 }
 
@@ -267,7 +361,6 @@ MainWindow::~MainWindow() {
 }
 
 void MainWindow::createPathEntry(QString string) {
-    qDebug() << string;
     if (string.endsWith("/.") || string.endsWith("/..")) {
         return;
     }
