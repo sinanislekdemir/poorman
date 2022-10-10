@@ -1,0 +1,7 @@
+[Desktop Entry]
+Type=Application
+Name=Poor Mans Catalog Creator
+Comment=Create disk and path catalogs
+Exec=PoorMansCatalog
+Icon=accessories-dictionary
+Categories=Accessories;
