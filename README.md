@@ -8,7 +8,7 @@ Instead, now I use this tool now to create an index/catalog of those drives.
 
 There are probably some parts that I totally messed up and the code might need some facelifting. In my defense, I created this for myself.
 
-![poorman](https://www.islekdemir.com/content/images/poorman.jpg)
+![poorman](https://www.islekdemir.com/content/images/poorman1.jpg)
 
 ## Notes
 
