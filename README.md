@@ -8,6 +8,10 @@ Instead, now I use this tool now to create an index/catalog of those drives.
 
 There are probably some parts that I totally messed up and the code might need some facelifting. In my defense, I created this for myself.
 
+## Download
+
+I have created a 64bit Deb package here: https://github.com/sinanislekdemir/poorman/releases/tag/v1.0.3 
+
 ![poorman](https://www.islekdemir.com/content/images/poorman1.jpg)
 
 ## Notes
@@ -18,7 +22,3 @@ There are probably some parts that I totally messed up and the code might need s
 4. Feel free to create PRs. I always welcome them.
 
 By default, it uses `~/poorman.sqlite` file but you can create multiple SQLite files.
-
-## Release
-
-Well, no release yet. I will create an AppImage or deb package if I won't be a lazy person.
