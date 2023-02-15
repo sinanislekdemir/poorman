@@ -155,7 +155,15 @@ void MainWindow::ShowThumbnail() {
     int row = ui->fileList->currentRow();
     QTableWidgetItem *w = ui->fileList->item(row, 2);
     int id = w->data(Qt::UserRole).toInt();
+
+    QTableWidgetItem *fname_widget = ui->fileList->item(row, 0);
+    int catalog_id = fname_widget->data(Qt::UserRole).toInt();
+
+    if (catalog_id != selected_catalog)
+        SelectCatalogByID(catalog_id);
+
     DirEntry d = db->getDirentry(id);
+    ui->statusbar->showMessage(d.full_path);
     if (!d.thumbnail.isEmpty()) {
         QPixmap map = QPixmap();
         map.loadFromData(d.thumbnail);
@@ -186,19 +194,12 @@ void MainWindow::buildTree(QTreeWidgetItem *parent, int catalog_id, int parent_i
 }
 
 void MainWindow::SearchFile() {
-    if (selected_catalog < 0) {
-        QMessageBox box;
-        box.setText(tr("No catalog selected"));
-        box.setIcon(QMessageBox::Information);
-        box.setStandardButtons(QMessageBox::Ok);
-        box.exec();
-        return;
-    }
+    int catalog_id = selected_catalog >= 0 ? selected_catalog : -1;
     QString text = ui->searchLine->text();
     QString condition = ui->searchCondition->currentText();
     bool and_join = condition == "Search all";
 
-    QSqlQuery files = db->searchFiles(text, and_join, selected_catalog);
+    QSqlQuery files = db->searchFiles(text, and_join, catalog_id);
     ShowFiles(files, true);
 }
 
@@ -210,20 +211,34 @@ void MainWindow::ShowSelectedDirectory() {
     ShowFiles(files, false);
 }
 
-void MainWindow::ShowSelectedCatalog() {
+void MainWindow::SelectCatalogByID(int id) {
     QSqlQuery catalogs = db->fetchCatalogs();
-    QString selected = ui->catalogList->currentItem()->text();
     ui->directoryTree->clear();
-    int catalog_id = -1;
-    while (catalogs.next()) {
-        QString cname = catalogs.value("name").toString();
-        if (cname == selected) {
-            catalog_id = catalogs.value("ids").toInt();
+    selected_catalog = id;
+    for (int i = 0; i < ui->catalogList->count(); i++) {
+        QListWidgetItem *item = ui->catalogList->item(i);
+        if (item->data(Qt::UserRole).toInt() == id) {
+            item->setSelected(true);
+            ui->catalogList->setCurrentItem(item);
+        } else {
+            item->setSelected(false);
         }
     }
+
+    ShowSelectedCatalog();
+}
+
+void MainWindow::ShowSelectedCatalog() {
+    QSqlQuery catalogs = db->fetchCatalogs();
+    QListWidgetItem *item = ui->catalogList->currentItem();
+    int catalog_id = -1;
+    if (item != NULL && item->isSelected()) {
+        catalog_id = item->data(Qt::UserRole).toInt();
+    }
+    ui->directoryTree->clear();
     selected_catalog = catalog_id;
     QTreeWidgetItem *it = new QTreeWidgetItem();
-    it->setText(0, selected);
+    it->setText(0, item == NULL ? "Root" : item->text());
     it->setIcon(0, driveIcon);
     int root_id = db->getRootId(catalog_id);
     it->setData(0, Qt::UserRole, root_id);
@@ -238,6 +253,7 @@ void MainWindow::refresh() {
         QListWidgetItem *item = new QListWidgetItem();
         item->setText(catalogs.value("name").toString());
         item->setIcon(driveIcon);
+        item->setData(Qt::UserRole, catalogs.value("ids").toInt());
         ui->catalogList->addItem(item);
     }
     ui->directoryTree->clear();
@@ -299,6 +315,7 @@ void MainWindow::ShowFiles(QSqlQuery data, bool fullname) {
         QTableWidgetItem *fname = new QTableWidgetItem();
         QFileInfo inf(data.value("full_path").toString());
         fname->setIcon(ip.icon(inf));
+        fname->setData(Qt::UserRole, data.value("catalog_id"));
         if (fullname) {
             fname->setText(inf.absoluteFilePath());
         } else {

@@ -52,8 +52,12 @@ QSqlQuery DBManager::searchFiles(QString keyword, bool and_join, int cat_id) {
         where.append(temp.arg(ck));
     }
     QString joiner = and_join ? " AND " : " OR ";
-    query.prepare("SELECT * FROM direntry WHERE catalog_id = (:catalog_id) AND (" + where.join(joiner) + ")");
-    query.bindValue(":catalog_id", cat_id);
+    if (cat_id == -1) {
+        query.prepare("SELECT * FROM direntry WHERE (" + where.join(joiner) + ")");
+    } else {
+        query.prepare("SELECT * FROM direntry WHERE catalog_id = (:catalog_id) AND (" + where.join(joiner) + ")");
+        query.bindValue(":catalog_id", cat_id);
+    }
     query.exec();
     return query;
 }

@@ -26,6 +26,7 @@ class MainWindow : public QMainWindow {
     void OpenDB();
     void ShowSelectedCatalog();
     void ShowSelectedDirectory();
+    void SelectCatalogByID(int id);
     void SearchFile();
     void ShowThumbnail();
     void Quit();
