@@ -46,8 +46,9 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
 	db = new DBManager(this->db_file_path);
 	this->scanner = new Scanner(this, db_file_path);
 	connect(this->scanner, SIGNAL(setProgressFilename(QString)), this, SLOT(createPathEntry(QString)));
-	folderIcon = QIcon::fromTheme("folder");
-	driveIcon = QIcon::fromTheme("accessories-dictionary");
+	QFileIconProvider provider;
+	folderIcon = provider.icon(QFileIconProvider::Folder);
+	driveIcon = provider.icon(QFileIconProvider::Drive);
 	ui->searchCondition->addItem("Search all");
 	ui->searchCondition->addItem("Search any");
 	ui->catalogList->setContextMenuPolicy(Qt::CustomContextMenu);
