@@ -10,7 +10,7 @@ There are probably some parts that I totally messed up and the code might need s
 
 ## Download
 
-I have created a 64bit Deb package and a Win64 version here: https://github.com/sinanislekdemir/poorman/releases/tag/v1.0.4 
+I have created a 64bit Deb package and a Win64 version here: https://github.com/sinanislekdemir/poorman/releases/tag/v1.0.6 
 
 ![poorman](https://www.16x4.com/content/images/poorman1.jpg)
 
