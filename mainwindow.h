@@ -22,6 +22,7 @@ class MainWindow : public QMainWindow {
 
       private slots:
 	void AddPath();
+	void AddPathFast();
 	void SaveAs();
 	void OpenDB();
 	void ShowSelectedCatalog();

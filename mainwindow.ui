@@ -274,7 +274,7 @@
      <x>0</x>
      <y>0</y>
      <width>1141</width>
-     <height>23</height>
+     <height>26</height>
     </rect>
    </property>
    <widget class="QMenu" name="menuCatalog">
@@ -285,6 +285,7 @@
     <addaction name="actionSave_catalog_file"/>
     <addaction name="separator"/>
     <addaction name="actionAdd_path"/>
+    <addaction name="addPathNoThumb"/>
     <addaction name="separator"/>
     <addaction name="actionQuit"/>
    </widget>
@@ -306,7 +307,7 @@
   </action>
   <action name="actionAdd_path">
    <property name="text">
-    <string>Add path</string>
+    <string>Add path (full mode with thumbnails)</string>
    </property>
   </action>
   <action name="actionAdd_disk">
@@ -340,6 +341,11 @@
   <action name="actionNew_catalog">
    <property name="text">
     <string>New catalog</string>
+   </property>
+  </action>
+  <action name="addPathNoThumb">
+   <property name="text">
+    <string>Add Path (fast without thumbnails)</string>
    </property>
   </action>
  </widget>

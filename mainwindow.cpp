@@ -34,6 +34,7 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
 	ui->setupUi(this);
 	ui->imageLabel->hide();
 	connect(ui->actionAdd_path, &QAction::triggered, this, &MainWindow::AddPath);
+	connect(ui->addPathNoThumb, &QAction::triggered, this, &MainWindow::AddPathFast);
 	connect(ui->actionSave_catalog_file, &QAction::triggered, this, &MainWindow::SaveAs);
 	connect(ui->catalogList, &QListWidget::itemSelectionChanged, this, &MainWindow::ShowSelectedCatalog);
 	connect(ui->directoryTree, &QTreeWidget::itemSelectionChanged, this, &MainWindow::ShowSelectedDirectory);
@@ -380,6 +381,39 @@ void MainWindow::AddPath() {
 						     QLineEdit::EchoMode::Normal, finfo.baseName(), &ok);
 	if (ok && !catalog_name.isEmpty()) {
 		this->scanner->setCatalogName(catalog_name);
+		this->scanner->withThumbs(true);
+		this->scanner->start();
+	} else {
+		ui->statusbar->showMessage("Cancelled");
+	}
+}
+
+void MainWindow::AddPathFast() {
+	QString filename = QFileDialog::getExistingDirectory(this, tr("Choose directory"));
+	if (filename.isEmpty()) {
+		QMessageBox box;
+		box.setText(tr("No directory selected"));
+		box.setIcon(QMessageBox::Information);
+		box.setStandardButtons(QMessageBox::Ok);
+		box.exec();
+		return;
+	}
+	if (this->scanner->running()) {
+		QMessageBox box;
+		box.setText(tr("There is an active scanner running"));
+		box.setIcon(QMessageBox::Warning);
+		box.setStandardButtons(QMessageBox::Ok);
+		box.exec();
+		return;
+	}
+	this->scanner->setPath(filename);
+	QFileInfo finfo(filename);
+	bool ok;
+	QString catalog_name = QInputDialog::getText(this, tr("Catalog Name"), tr("Give a name to this catalog"),
+						     QLineEdit::EchoMode::Normal, finfo.baseName(), &ok);
+	if (ok && !catalog_name.isEmpty()) {
+		this->scanner->setCatalogName(catalog_name);
+		this->scanner->withThumbs(false);
 		this->scanner->start();
 	} else {
 		ui->statusbar->showMessage("Cancelled");
