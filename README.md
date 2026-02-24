@@ -22,3 +22,57 @@ I have created a 64bit Deb package and a Win64 version here: https://github.com/
 4. Feel free to create PRs. I always welcome them.
 
 By default, it uses `~/poorman.sqlite` file but you can create multiple SQLite files.
+
+## Building Packages
+
+### Quick Package Build
+
+Run the automated packaging script:
+
+```bash
+./package.sh
+```
+
+This will create both:
+- **AppImage**: `PoorMansCatalog-1.0.6-x86_64.AppImage`
+- **DEB package**: `poormanscatalog_1.0.6_amd64.deb`
+
+### Requirements
+
+Install build dependencies:
+
+```bash
+sudo apt install qt5-qmake build-essential equivs wget
+```
+
+### Manual Build
+
+#### AppImage
+
+```bash
+qmake && make
+wget https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
+chmod +x linuxdeploy-x86_64.AppImage
+./linuxdeploy-x86_64.AppImage --appdir AppDir --executable PoorMansCatalog --plugin qt --output appimage
+```
+
+#### DEB Package
+
+```bash
+qmake && make
+equivs-build package.conf
+```
+
+### Installation
+
+**AppImage:**
+```bash
+chmod +x PoorMansCatalog-1.0.6-x86_64.AppImage
+./PoorMansCatalog-1.0.6-x86_64.AppImage
+```
+
+**DEB:**
+```bash
+sudo dpkg -i poormanscatalog_1.0.6_amd64.deb
+sudo apt install -f  # Fix dependencies if needed
+```

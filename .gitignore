@@ -1,2 +1,47 @@
-*.user
-build
+# Build artifacts
+build/
+AppDir/
+deb-build/
+*.o
+*.so
+*.a
+moc_*.cpp
+moc_*.h
+ui_*.h
+qrc_*.cpp
+.qmake.stash
+
+# Qt Creator
+*.pro.user
+*.pro.user.*
+
+# Packages
+*.AppImage
+*.deb
+*.ddeb
+*.buildinfo
+*.changes
+*.rpm
+*.tar.gz
+
+# linuxdeploy tools
+linuxdeploy*.AppImage
+
+# Database files (for testing)
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*~
+
+# Binary
+PoorMansCatalog
+
+# Temporary files
+*~
+.*.swp
+.*.swo

@@ -18,6 +18,24 @@ DBManager::DBManager(QString &dbpath) {
 	this->connect();
 }
 
+DBManager::DBManager(QString &dbpath, QString connection_name) {
+	this->db_path = dbpath;
+	if (QSqlDatabase::contains(connection_name)) {
+		m_db = QSqlDatabase::database(connection_name);
+	} else {
+		m_db = QSqlDatabase::addDatabase("QSQLITE", connection_name);
+		m_db.setDatabaseName(db_path);
+		if (!m_db.open()) {
+			qDebug() << "Unable to open database " + db_path;
+		} else {
+			QSqlQuery query(m_db);
+			query.exec("PRAGMA journal_mode=WAL");
+			query.exec("PRAGMA synchronous=NORMAL");
+		}
+		createTables();
+	}
+}
+
 /**
  * @brief Find the parent directory id.
  * @param catalog_id
@@ -25,7 +43,7 @@ DBManager::DBManager(QString &dbpath) {
  * @return
  */
 int DBManager::findParent(int catalog_id, QString full_path) {
-	QSqlQuery query;
+	QSqlQuery query(m_db);
 	query.prepare("SELECT ids FROM direntry WHERE full_path = (:full_path) AND catalog_id = (:catalog_id)");
 	query.bindValue(":full_path", full_path);
 	query.bindValue(":catalog_id", catalog_id);
@@ -43,7 +61,7 @@ QString DBManager::formatSQL(QString keyword) {
 }
 
 QSqlQuery DBManager::searchFiles(QString keyword, bool and_join, int cat_id) {
-	QSqlQuery query;
+	QSqlQuery query(m_db);
 	QString temp = "full_path LIKE '%%1%'";
 	QStringList where;
 	QStringList keywords = keyword.split(" ");
@@ -63,7 +81,7 @@ QSqlQuery DBManager::searchFiles(QString keyword, bool and_join, int cat_id) {
 }
 
 int DBManager::getRootId(int cat_id) {
-	QSqlQuery query;
+	QSqlQuery query(m_db);
 	query.prepare(
 	    "SELECT ids FROM direntry WHERE catalog_id = (:catalog_id) AND parent_id = -1 AND name = (:name) AND is_directory = 1");
 	query.bindValue(":catalog_id", cat_id);
@@ -76,7 +94,7 @@ int DBManager::getRootId(int cat_id) {
 }
 
 QSqlQuery DBManager::allFiles(int cat_id) {
-	QSqlQuery query;
+	QSqlQuery query(m_db);
 	query.prepare("SELECT * FROM direntry WHERE catalog_id = (:catalog_id)");
 	query.bindValue(":catalog_id", cat_id);
 	query.exec();
@@ -84,22 +102,31 @@ QSqlQuery DBManager::allFiles(int cat_id) {
 }
 
 QSqlQuery DBManager::fetchCatalogs() {
-	QSqlQuery query;
+	QSqlQuery query(m_db);
 	query.prepare("SELECT * FROM catalog ORDER BY name");
 	query.exec();
 	return query;
 }
 
 QSqlQuery DBManager::fetchFiles(int parent_id) {
-	QSqlQuery query;
+	QSqlQuery query(m_db);
 	query.prepare("SELECT * FROM direntry WHERE parent_id = (:parent_id) AND is_directory = 0 ORDER BY name");
 	query.bindValue(":parent_id", parent_id);
 	query.exec();
 	return query;
 }
 
+QSqlQuery DBManager::fetchFiles(int parent_id, int catalog_id) {
+	QSqlQuery query(m_db);
+	query.prepare("SELECT * FROM direntry WHERE parent_id = (:parent_id) AND catalog_id = (:catalog_id) AND is_directory = 0 ORDER BY name");
+	query.bindValue(":parent_id", parent_id);
+	query.bindValue(":catalog_id", catalog_id);
+	query.exec();
+	return query;
+}
+
 QSqlQuery DBManager::fetchDirectoryTree(int cat_id, int parent_id) {
-	QSqlQuery query;
+	QSqlQuery query(m_db);
 	query.prepare(
 	    "SELECT * FROM direntry WHERE catalog_id = (:catalog_id) AND is_directory = 1 AND parent_id = (:parent_id) ORDER BY ids;");
 	query.bindValue(":catalog_id", cat_id);
@@ -118,6 +145,9 @@ void DBManager::connect() {
 		qDebug() << "Unable to open database " + db_path;
 	} else {
 		qDebug() << "DB Connected";
+		QSqlQuery query(m_db);
+		query.exec("PRAGMA journal_mode=WAL");
+		query.exec("PRAGMA synchronous=NORMAL");
 	}
 	createTables();
 }
@@ -136,7 +166,7 @@ DBManager::~DBManager() {
  * @return
  */
 bool DBManager::dirEntryExists(QString full_path) {
-	QSqlQuery query;
+	QSqlQuery query(m_db);
 	query.prepare("SELECT ids FROM direntry WHERE full_path = (:full_path)");
 	query.bindValue(":full_path", full_path);
 	query.exec();
@@ -149,34 +179,25 @@ bool DBManager::dirEntryExists(QString full_path) {
 int DBManager::createCatalog(Catalog &catalog) { return createCatalog(catalog.name, catalog.original_path, catalog.tags); }
 
 int DBManager::createCatalog(QString name, QString original_path, QString tags) {
-	QSqlQuery query;
+	QSqlQuery query(m_db);
 	query.prepare("INSERT INTO catalog (name, original_path, tags) VALUES "
 		      "(:name, :original_path, :tags);");
 	query.bindValue(":name", name);
 	query.bindValue(":original_path", original_path);
 	query.bindValue(":tags", tags);
 	if (query.exec()) {
-		QSqlQuery query_find;
-		query_find.prepare("SELECT ids FROM catalog WHERE name = (:name)");
-		query_find.bindValue(":name", name);
-		query_find.exec();
-		if (query_find.next()) {
-			int id_ids = query_find.value("ids").toInt();
-			return id_ids;
-		} else {
-			qDebug() << "Could not find the newly created catalog";
-			qDebug() << query_find.lastError();
-			return -1;
-		}
+		int id = query.lastInsertId().toInt();
+		qDebug() << "Created catalog" << name << "with ID:" << id;
+		return id;
 	} else {
-		qDebug() << "Unable to create the catalog " << query.lastError();
+		qDebug() << "Unable to create the catalog" << query.lastError();
 	}
 	return -1;
 }
 
 int DBManager::createDirEntry(QString name, QString directory, QString full_path, int64_t filesize, QByteArray thumbnail, bool is_directory,
 			      int parent_id, int catalog_id) {
-	QSqlQuery query;
+	QSqlQuery query(m_db);
 	query.prepare("INSERT INTO direntry ("
 		      "directory, full_path, name, "
 		      "filesize, thumbnail64, "
@@ -194,14 +215,15 @@ int DBManager::createDirEntry(QString name, QString directory, QString full_path
 	query.bindValue(":catalog_id", catalog_id);
 	query.bindValue(":parent_id", parent_id);
 	if (!query.exec()) {
-		qDebug() << "Unable to create the catalog " << query.lastError();
+		qDebug() << "Unable to create direntry " << query.lastError();
+		return -1;
 	}
 
-	return -1;
+	return query.lastInsertId().toInt();
 }
 
 DirEntry DBManager::getDirentry(int id) {
-	QSqlQuery query;
+	QSqlQuery query(m_db);
 	query.prepare("SELECT * FROM direntry WHERE ids = (:ids)");
 	query.bindValue(":ids", id);
 	if (query.exec() && query.next()) {
@@ -226,23 +248,42 @@ int DBManager::createDirEntry(DirEntry &dir_entry) {
 }
 
 bool DBManager::deleteFiles(int cat_id, QVector<int> files) {
-	QSqlQuery query;
-	query.prepare("DELETE FROM direntry WHERE catalog_id = (:catalog_id) AND ids IN (:ids)");
-	query.bindValue(":catalog_id", cat_id);
-	QStringList x;
-	for (int id : files) {
-		x.append(QString::number(id));
+	if (files.isEmpty()) {
+		return true;
 	}
-	query.bindValue(":ids", x.join(", "));
+	QStringList placeholders;
+	for (int i = 0; i < files.size(); i++) {
+		placeholders.append("?");
+	}
+	QString queryStr = QString("DELETE FROM direntry WHERE catalog_id = ? AND ids IN (%1)").arg(placeholders.join(", "));
+	QSqlQuery query(m_db);
+	query.prepare(queryStr);
+	query.addBindValue(cat_id);
+	for (int id : files) {
+		query.addBindValue(id);
+	}
 	if (!query.exec()) {
 		qDebug() << query.executedQuery();
 		qDebug() << query.lastError();
+		return false;
+	}
+	return true;
+}
+
+bool DBManager::updateThumbnail(int entry_id, QByteArray thumbnail) {
+	QSqlQuery query(m_db);
+	query.prepare("UPDATE direntry SET thumbnail64 = :thumbnail WHERE ids = :id");
+	query.bindValue(":thumbnail", thumbnail);
+	query.bindValue(":id", entry_id);
+	if (!query.exec()) {
+		qDebug() << "Failed to update thumbnail for id" << entry_id << query.lastError();
+		return false;
 	}
 	return true;
 }
 
 void DBManager::createTables() {
-	QSqlQuery query;
+	QSqlQuery query(m_db);
 	query.prepare("CREATE TABLE IF NOT EXISTS direntry ("
 		      "ids integer primary key, directory "
 		      "text, full_path text, name text, filesize integer, "

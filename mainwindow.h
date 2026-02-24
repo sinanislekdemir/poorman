@@ -3,6 +3,7 @@
 
 #include "dbmanager.h"
 #include "scanner.h"
+#include "thumbnailqueue.h"
 #include <QMainWindow>
 
 QT_BEGIN_NAMESPACE
@@ -32,19 +33,23 @@ class MainWindow : public QMainWindow {
 	void ShowThumbnail();
 	void Quit();
 	void ShowAbout();
+	void ShowSearchHelp();
 	void createPathEntry(QString string);
 	void catalogContextMenuRequested(QPoint);
 	void rescanCatalog();
 	void deleteCatalog();
+	void updateThumbnailQueueStatus(int size);
 
       private:
 	QString db_file_path;
 
 	Scanner *scanner;
 	DBManager *db;
+	ThumbnailQueue *thumbQueue;
 	QIcon folderIcon;
 	QIcon driveIcon;
 	int selected_catalog;
+	bool in_search_mode;
 	Ui::MainWindow *ui;
 
 	void buildTree(QTreeWidgetItem *parent, int catalog_id, int parent_id);

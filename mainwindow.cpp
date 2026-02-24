@@ -41,11 +41,15 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
 	connect(ui->fileList, &QTableWidget::itemSelectionChanged, this, &MainWindow::ShowThumbnail);
 	connect(ui->actionOpen_catalog_file, &QAction::triggered, this, &MainWindow::OpenDB);
 	connect(ui->searchLine, &QLineEdit::editingFinished, this, &MainWindow::SearchFile);
+	connect(ui->searchHelpButton, &QPushButton::clicked, this, &MainWindow::ShowSearchHelp);
 	connect(ui->actionQuit, &QAction::triggered, this, &MainWindow::Quit);
 	connect(ui->actionAbout, &QAction::triggered, this, &MainWindow::ShowAbout);
 	this->db_file_path = QDir::home().absolutePath() + "/poorman.sqlite";
 	db = new DBManager(this->db_file_path);
+	thumbQueue = new ThumbnailQueue(this, db_file_path);
+	connect(thumbQueue, &ThumbnailQueue::queueSizeChanged, this, &MainWindow::updateThumbnailQueueStatus);
 	this->scanner = new Scanner(this, db_file_path);
+	this->scanner->setThumbnailQueue(thumbQueue);
 	connect(this->scanner, SIGNAL(setProgressFilename(QString)), this, SLOT(createPathEntry(QString)));
 	QFileIconProvider provider;
 	folderIcon = provider.icon(QFileIconProvider::Folder);
@@ -55,6 +59,7 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
 	ui->catalogList->setContextMenuPolicy(Qt::CustomContextMenu);
 	connect(ui->catalogList, SIGNAL(customContextMenuRequested(QPoint)), this, SLOT(catalogContextMenuRequested(QPoint)));
 	selected_catalog = -2;
+	in_search_mode = false;
 	refresh();
 }
 
@@ -154,6 +159,30 @@ void MainWindow::ShowAbout() {
 	about.exec();
 }
 
+void MainWindow::ShowSearchHelp() {
+	QMessageBox helpBox;
+	helpBox.setWindowTitle(tr("Search Help"));
+	helpBox.setTextFormat(Qt::RichText);
+	helpBox.setText(
+	    tr("<h3>Search Syntax</h3>"
+	       "<p><b>Basic Search:</b><br>"
+	       "Type keywords separated by spaces to search file names and paths.</p>"
+	       "<p><b>Search Modes:</b><br>"
+	       "• <b>Search all</b> - Files must contain ALL keywords<br>"
+	       "• <b>Search any</b> - Files containing ANY keyword</p>"
+	       "<p><b>Examples:</b><br>"
+	       "• <code>vacation 2023</code> - finds files with both 'vacation' AND '2023'<br>"
+	       "• <code>jpg png</code> - with 'Search any' finds all .jpg OR .png files<br>"
+	       "• <code>report final</code> - finds files containing both words</p>"
+	       "<p><b>Tips:</b><br>"
+	       "• Search is case-insensitive<br>"
+	       "• Searches in full file path (directory + filename)<br>"
+	       "• Use specific keywords for better results</p>"));
+	helpBox.setIcon(QMessageBox::Information);
+	helpBox.setStandardButtons(QMessageBox::Ok);
+	helpBox.exec();
+}
+
 void MainWindow::ShowThumbnail() {
 	int row = ui->fileList->currentRow();
 	QTableWidgetItem *w = ui->fileList->item(row, 2);
@@ -162,7 +191,7 @@ void MainWindow::ShowThumbnail() {
 	QTableWidgetItem *fname_widget = ui->fileList->item(row, 0);
 	int catalog_id = fname_widget->data(Qt::UserRole).toInt();
 
-	if (catalog_id != selected_catalog)
+	if (in_search_mode && catalog_id != selected_catalog)
 		SelectCatalogByID(catalog_id);
 
 	DirEntry d = db->getDirentry(id);
@@ -170,8 +199,9 @@ void MainWindow::ShowThumbnail() {
 	if (!d.thumbnail.isEmpty()) {
 		QPixmap map = QPixmap();
 		map.loadFromData(d.thumbnail);
-		ui->imageLabel->setScaledContents(true);
-		ui->imageLabel->setPixmap(map);
+		int maxWidth = ui->imageLabel->maximumWidth();
+		QPixmap scaled = map.scaledToWidth(maxWidth, Qt::SmoothTransformation);
+		ui->imageLabel->setPixmap(scaled);
 		ui->imageLabel->show();
 	} else {
 		ui->imageLabel->clear();
@@ -203,6 +233,7 @@ void MainWindow::SearchFile() {
 	bool and_join = condition == "Search all";
 
 	QSqlQuery files = db->searchFiles(text, and_join, catalog_id);
+	in_search_mode = true;
 	ShowFiles(files, true);
 }
 
@@ -210,7 +241,8 @@ void MainWindow::ShowSelectedDirectory() {
 	int dir_id = ui->directoryTree->currentItem()->data(0, Qt::UserRole).toInt();
 
 	buildTree(ui->directoryTree->currentItem(), selected_catalog, dir_id);
-	QSqlQuery files = db->fetchFiles(dir_id);
+	QSqlQuery files = db->fetchFiles(dir_id, selected_catalog);
+	in_search_mode = false;
 	ShowFiles(files, false);
 }
 
@@ -284,8 +316,12 @@ void MainWindow::OpenDB() {
 	delete db;
 	this->db_file_path = filename;
 	db = new DBManager(this->db_file_path);
+	delete thumbQueue;
+	thumbQueue = new ThumbnailQueue(this, db_file_path);
+	connect(thumbQueue, &ThumbnailQueue::queueSizeChanged, this, &MainWindow::updateThumbnailQueueStatus);
 	delete this->scanner;
 	this->scanner = new Scanner(this, db_file_path);
+	this->scanner->setThumbnailQueue(thumbQueue);
 	connect(this->scanner, SIGNAL(setProgressFilename(QString)), this, SLOT(createPathEntry(QString)));
 	this->refresh();
 }
@@ -380,6 +416,7 @@ void MainWindow::AddPath() {
 	QString catalog_name = QInputDialog::getText(this, tr("Catalog Name"), tr("Give a name to this catalog"),
 						     QLineEdit::EchoMode::Normal, finfo.baseName(), &ok);
 	if (ok && !catalog_name.isEmpty()) {
+		this->scanner->setCatalogId(-1);
 		this->scanner->setCatalogName(catalog_name);
 		this->scanner->withThumbs(true);
 		this->scanner->start();
@@ -412,6 +449,7 @@ void MainWindow::AddPathFast() {
 	QString catalog_name = QInputDialog::getText(this, tr("Catalog Name"), tr("Give a name to this catalog"),
 						     QLineEdit::EchoMode::Normal, finfo.baseName(), &ok);
 	if (ok && !catalog_name.isEmpty()) {
+		this->scanner->setCatalogId(-1);
 		this->scanner->setCatalogName(catalog_name);
 		this->scanner->withThumbs(false);
 		this->scanner->start();
@@ -421,6 +459,7 @@ void MainWindow::AddPathFast() {
 }
 
 MainWindow::~MainWindow() {
+	delete thumbQueue;
 	delete db;
 	delete ui;
 	delete scanner;
@@ -435,5 +474,13 @@ void MainWindow::createPathEntry(QString string) {
 		delete db;
 		db = new DBManager(this->db_file_path);
 		refresh();
+	}
+}
+
+void MainWindow::updateThumbnailQueueStatus(int size) {
+	if (size > 0) {
+		ui->statusbar->showMessage(tr("Thumbnail queue: %1 pending").arg(size));
+	} else {
+		ui->statusbar->showMessage(tr("All thumbnails generated"));
 	}
 }

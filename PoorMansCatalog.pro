@@ -13,13 +13,17 @@ SOURCES += \
     dbmanager.cpp \
     main.cpp \
     mainwindow.cpp \
-    scanner.cpp
+    scanner.cpp \
+    thumbnailmanager.cpp \
+    thumbnailqueue.cpp
 
 HEADERS += \
     about.h \
     dbmanager.h \
     mainwindow.h \
-    scanner.h
+    scanner.h \
+    thumbnailmanager.h \
+    thumbnailqueue.h
 
 FORMS += \
     about.ui \

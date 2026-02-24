@@ -58,19 +58,19 @@
          </property>
          <layout class="QVBoxLayout" name="verticalLayout_4">
           <property name="spacing">
-           <number>0</number>
+           <number>6</number>
           </property>
           <property name="leftMargin">
-           <number>0</number>
+           <number>6</number>
           </property>
           <property name="topMargin">
-           <number>0</number>
+           <number>6</number>
           </property>
           <property name="rightMargin">
            <number>0</number>
           </property>
           <property name="bottomMargin">
-           <number>0</number>
+           <number>6</number>
           </property>
           <item>
            <layout class="QVBoxLayout" name="verticalLayout_3">
@@ -94,6 +94,9 @@
                 <height>16777215</height>
                </size>
               </property>
+              <property name="toolTip">
+               <string>List of all catalogs. Right-click for options.</string>
+              </property>
              </widget>
             </item>
             <item>
@@ -111,7 +114,10 @@
                </size>
               </property>
               <property name="text">
-               <string>TextLabel</string>
+               <string></string>
+              </property>
+              <property name="alignment">
+               <set>Qt::AlignCenter</set>
               </property>
              </widget>
             </item>
@@ -148,16 +154,16 @@
          </property>
          <layout class="QVBoxLayout" name="verticalLayout_2">
           <property name="leftMargin">
-           <number>0</number>
+           <number>6</number>
           </property>
           <property name="topMargin">
-           <number>0</number>
+           <number>6</number>
           </property>
           <property name="rightMargin">
-           <number>0</number>
+           <number>6</number>
           </property>
           <property name="bottomMargin">
-           <number>0</number>
+           <number>6</number>
           </property>
           <item>
            <widget class="QFrame" name="innerFrame">
@@ -192,10 +198,34 @@
                 <item>
                  <layout class="QHBoxLayout" name="horizontalLayout_4">
                   <item>
-                   <widget class="QLineEdit" name="searchLine"/>
+                   <widget class="QLineEdit" name="searchLine">
+                    <property name="placeholderText">
+                     <string>Type search keywords here...</string>
+                    </property>
+                   </widget>
                   </item>
                   <item>
-                   <widget class="QComboBox" name="searchCondition"/>
+                   <widget class="QComboBox" name="searchCondition">
+                    <property name="toolTip">
+                     <string>Search all: find files matching all keywords. Search any: find files matching any keyword.</string>
+                    </property>
+                   </widget>
+                  </item>
+                  <item>
+                   <widget class="QPushButton" name="searchHelpButton">
+                    <property name="maximumSize">
+                     <size>
+                      <width>30</width>
+                      <height>16777215</height>
+                     </size>
+                    </property>
+                    <property name="text">
+                     <string>?</string>
+                    </property>
+                    <property name="toolTip">
+                     <string>Show search help</string>
+                    </property>
+                   </widget>
                   </item>
                  </layout>
                 </item>
@@ -224,6 +254,9 @@
                     <width>300</width>
                     <height>16777215</height>
                    </size>
+                  </property>
+                  <property name="toolTip">
+                   <string>Directory structure of the selected catalog</string>
                   </property>
                   <attribute name="headerVisible">
                    <bool>false</bool>
@@ -304,10 +337,22 @@
    <property name="text">
     <string>Open catalog file</string>
    </property>
+   <property name="toolTip">
+    <string>Open an existing catalog database file</string>
+   </property>
+   <property name="shortcut">
+    <string>Ctrl+O</string>
+   </property>
   </action>
   <action name="actionAdd_path">
    <property name="text">
     <string>Add path (full mode with thumbnails)</string>
+   </property>
+   <property name="toolTip">
+    <string>Scan a directory and create thumbnails for image files</string>
+   </property>
+   <property name="shortcut">
+    <string>Ctrl+N</string>
    </property>
   </action>
   <action name="actionAdd_disk">
@@ -319,10 +364,19 @@
    <property name="text">
     <string>Save catalog file</string>
    </property>
+   <property name="toolTip">
+    <string>Save the catalog to a new database file</string>
+   </property>
+   <property name="shortcut">
+    <string>Ctrl+S</string>
+   </property>
   </action>
   <action name="actionQuit">
    <property name="text">
     <string>Quit</string>
+   </property>
+   <property name="toolTip">
+    <string>Exit the application</string>
    </property>
    <property name="shortcut">
     <string>Ctrl+Q</string>
@@ -337,6 +391,9 @@
    <property name="text">
     <string>About</string>
    </property>
+   <property name="toolTip">
+    <string>About Poor Man's Catalog</string>
+   </property>
   </action>
   <action name="actionNew_catalog">
    <property name="text">
@@ -346,6 +403,12 @@
   <action name="addPathNoThumb">
    <property name="text">
     <string>Add Path (fast without thumbnails)</string>
+   </property>
+   <property name="toolTip">
+    <string>Scan a directory quickly without generating thumbnails</string>
+   </property>
+   <property name="shortcut">
+    <string>Ctrl+Shift+N</string>
    </property>
   </action>
  </widget>
