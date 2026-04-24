@@ -12,7 +12,7 @@ There are probably some parts that I totally messed up and the code might need s
 
 I have created a 64bit Deb package and a Win64 version here: https://github.com/sinanislekdemir/poorman/releases/tag/v1.2.0 
 
-![poorman](https://www.16x4.com/content/images/poorman1.jpg)
+<img width="1144" height="671" alt="image" src="https://github.com/user-attachments/assets/54b91a25-cbf6-4ffc-9efc-b8517fab60fb" />
 
 ## Notes
 
