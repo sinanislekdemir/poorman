@@ -5,7 +5,7 @@
 set -e
 
 APP_NAME="PoorMansCatalog"
-VERSION="1.0.6"
+VERSION="1.2.0"
 ARCH="x86_64"
 
 # Colors for output

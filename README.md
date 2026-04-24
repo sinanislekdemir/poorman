@@ -10,7 +10,7 @@ There are probably some parts that I totally messed up and the code might need s
 
 ## Download
 
-I have created a 64bit Deb package and a Win64 version here: https://github.com/sinanislekdemir/poorman/releases/tag/v1.0.6 
+I have created a 64bit Deb package and a Win64 version here: https://github.com/sinanislekdemir/poorman/releases/tag/v1.2.0 
 
 ![poorman](https://www.16x4.com/content/images/poorman1.jpg)
 
@@ -34,8 +34,8 @@ Run the automated packaging script:
 ```
 
 This will create both:
-- **AppImage**: `PoorMansCatalog-1.0.6-x86_64.AppImage`
-- **DEB package**: `poormanscatalog_1.0.6_amd64.deb`
+- **AppImage**: `PoorMansCatalog-1.2.0-x86_64.AppImage`
+- **DEB package**: `poormanscatalog_1.2.0_amd64.deb`
 
 ### Requirements
 
@@ -67,12 +67,12 @@ equivs-build package.conf
 
 **AppImage:**
 ```bash
-chmod +x PoorMansCatalog-1.0.6-x86_64.AppImage
-./PoorMansCatalog-1.0.6-x86_64.AppImage
+chmod +x PoorMansCatalog-1.2.0-x86_64.AppImage
+./PoorMansCatalog-1.2.0-x86_64.AppImage
 ```
 
 **DEB:**
 ```bash
-sudo dpkg -i poormanscatalog_1.0.6_amd64.deb
+sudo dpkg -i poormanscatalog_1.2.0_amd64.deb
 sudo apt install -f  # Fix dependencies if needed
 ```

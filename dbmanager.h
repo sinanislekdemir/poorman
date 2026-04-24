@@ -28,9 +28,9 @@ struct DirEntry {
 
 class DBManager {
       public:
-    DBManager(QString &dbpath);
-    DBManager(QString &dbpath, QString connection_name);
-    ~DBManager();
+	DBManager(QString &dbpath);
+	DBManager(QString &dbpath, QString connection_name);
+	~DBManager();
     // Create stuff
     int createDirEntry(QString name, QString directory, QString full_path, int64_t filesize, QByteArray thumbnail, bool is_directory,
                int parent_id, int catalog_id);
@@ -48,15 +48,16 @@ class DBManager {
     QSqlQuery allFiles(int cat_id);
     QSqlQuery searchFiles(QString keyword, bool and_join, int cat_id);
     bool deleteFiles(int cat_id, QVector<int> files);
-    QString formatSQL(QString keyword);
-    DirEntry getDirentry(int id);
-    int getRootId(int cat_id);
-    bool updateThumbnail(int entry_id, QByteArray thumbnail);
+	QString formatSQL(QString keyword);
+	DirEntry getDirentry(int id);
+	int getRootId(int cat_id);
+	bool updateThumbnail(int entry_id, QByteArray thumbnail);
 
       private:
-    QSqlDatabase m_db;
-    QString db_path;
-    void createTables();
+	QSqlDatabase m_db;
+	QString db_path;
+	void createTables();
+	void createIndexes();
 };
 
 #endif // DBMANAGER_H

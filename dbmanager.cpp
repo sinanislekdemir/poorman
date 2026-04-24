@@ -71,9 +71,13 @@ QSqlQuery DBManager::searchFiles(QString keyword, bool and_join, int cat_id) {
 	}
 	QString joiner = and_join ? " AND " : " OR ";
 	if (cat_id == -1) {
-		query.prepare("SELECT * FROM direntry WHERE (" + where.join(joiner) + ")");
+		query.prepare("SELECT ids, directory, full_path, name, filesize, is_directory, catalog_id, parent_id, "
+			      "thumbnail64 IS NOT NULL AS has_thumbnail FROM direntry WHERE (" +
+			      where.join(joiner) + ")");
 	} else {
-		query.prepare("SELECT * FROM direntry WHERE catalog_id = (:catalog_id) AND (" + where.join(joiner) + ")");
+		query.prepare("SELECT ids, directory, full_path, name, filesize, is_directory, catalog_id, parent_id, "
+			      "thumbnail64 IS NOT NULL AS has_thumbnail FROM direntry WHERE catalog_id = (:catalog_id) AND (" +
+			      where.join(joiner) + ")");
 		query.bindValue(":catalog_id", cat_id);
 	}
 	query.exec();
@@ -95,7 +99,7 @@ int DBManager::getRootId(int cat_id) {
 
 QSqlQuery DBManager::allFiles(int cat_id) {
 	QSqlQuery query(m_db);
-	query.prepare("SELECT * FROM direntry WHERE catalog_id = (:catalog_id)");
+	query.prepare("SELECT ids, full_path FROM direntry WHERE catalog_id = (:catalog_id)");
 	query.bindValue(":catalog_id", cat_id);
 	query.exec();
 	return query;
@@ -110,7 +114,9 @@ QSqlQuery DBManager::fetchCatalogs() {
 
 QSqlQuery DBManager::fetchFiles(int parent_id) {
 	QSqlQuery query(m_db);
-	query.prepare("SELECT * FROM direntry WHERE parent_id = (:parent_id) AND is_directory = 0 ORDER BY name");
+	query.prepare("SELECT ids, directory, full_path, name, filesize, is_directory, catalog_id, parent_id, "
+		      "thumbnail64 IS NOT NULL AS has_thumbnail FROM direntry WHERE parent_id = (:parent_id) AND "
+		      "is_directory = 0 ORDER BY name");
 	query.bindValue(":parent_id", parent_id);
 	query.exec();
 	return query;
@@ -118,7 +124,9 @@ QSqlQuery DBManager::fetchFiles(int parent_id) {
 
 QSqlQuery DBManager::fetchFiles(int parent_id, int catalog_id) {
 	QSqlQuery query(m_db);
-	query.prepare("SELECT * FROM direntry WHERE parent_id = (:parent_id) AND catalog_id = (:catalog_id) AND is_directory = 0 ORDER BY name");
+	query.prepare("SELECT ids, directory, full_path, name, filesize, is_directory, catalog_id, parent_id, "
+		      "thumbnail64 IS NOT NULL AS has_thumbnail FROM direntry WHERE parent_id = (:parent_id) AND "
+		      "catalog_id = (:catalog_id) AND is_directory = 0 ORDER BY name");
 	query.bindValue(":parent_id", parent_id);
 	query.bindValue(":catalog_id", catalog_id);
 	query.exec();
@@ -128,7 +136,8 @@ QSqlQuery DBManager::fetchFiles(int parent_id, int catalog_id) {
 QSqlQuery DBManager::fetchDirectoryTree(int cat_id, int parent_id) {
 	QSqlQuery query(m_db);
 	query.prepare(
-	    "SELECT * FROM direntry WHERE catalog_id = (:catalog_id) AND is_directory = 1 AND parent_id = (:parent_id) ORDER BY ids;");
+	    "SELECT ids, name FROM direntry WHERE catalog_id = (:catalog_id) AND is_directory = 1 AND "
+	    "parent_id = (:parent_id) ORDER BY ids;");
 	query.bindValue(":catalog_id", cat_id);
 	query.bindValue(":parent_id", parent_id);
 	query.exec();
@@ -296,9 +305,9 @@ void DBManager::createTables() {
 	}
 	query.prepare("CREATE INDEX IF NOT EXISTS direntry_fullpath ON direntry (catalog_id, full_path)");
 	if (query.exec()) {
-		qDebug("Created index");
+		qDebug("Created full_path index");
 	} else {
-		qDebug("Index failed");
+		qDebug("Full_path index failed");
 	}
 	query.prepare("CREATE TABLE IF NOT EXISTS catalog(ids integer primary key, name text, "
 		      "original_path text, tags text);");
@@ -306,5 +315,21 @@ void DBManager::createTables() {
 		qDebug() << "Created catalog table";
 	} else {
 		qDebug() << "Failed to create the catalog table";
+	}
+	createIndexes();
+}
+
+void DBManager::createIndexes() {
+	QSqlQuery query(m_db);
+	query.prepare("CREATE INDEX IF NOT EXISTS direntry_catalog_parent_type_name ON direntry "
+		      "(catalog_id, parent_id, is_directory, name)");
+	if (!query.exec()) {
+		qDebug() << "Failed to create browse name index" << query.lastError();
+	}
+
+	query.prepare("CREATE INDEX IF NOT EXISTS direntry_catalog_parent_type_ids ON direntry "
+		      "(catalog_id, parent_id, is_directory, ids)");
+	if (!query.exec()) {
+		qDebug() << "Failed to create browse ids index" << query.lastError();
 	}
 }
