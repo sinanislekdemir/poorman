@@ -1,0 +1,64 @@
+name: Build AppImage
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to embed (e.g. 1.2.0). Defaults to the latest git tag."
+        required: false
+        default: ""
+
+permissions:
+  contents: write
+
+jobs:
+  appimage:
+    # Build inside the oldest still-supported Ubuntu LTS so the AppImage only
+    # links against an old glibc and runs on every supported distribution.
+    runs-on: ubuntu-latest
+    container: ubuntu:20.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install build dependencies
+        run: |
+          export DEBIAN_FRONTEND=noninteractive
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            build-essential \
+            qt5-qmake \
+            qtbase5-dev \
+            qtbase5-dev-tools \
+            qttools5-dev-tools \
+            libqt5sql5-sqlite \
+            wget \
+            ca-certificates \
+            file \
+            patchelf \
+            libfuse2 \
+            desktop-file-utils
+
+      - name: Build AppImage
+        env:
+          VERSION: ${{ github.event.inputs.version }}
+        run: |
+          chmod +x scripts/build-appimage.sh
+          ./scripts/build-appimage.sh
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: PoorMansCatalog-AppImage
+          path: "*.AppImage"
+
+      - name: Attach AppImage to release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: "*.AppImage"

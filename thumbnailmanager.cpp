@@ -85,7 +85,11 @@ QByteArray ThumbnailManager::generateWithNative(const QString &filePath, const Q
 	exec.replace("%i", filePath);
 	exec.replace("%o", outputPath);
 
+#if QT_VERSION >= QT_VERSION_CHECK(5, 14, 0)
 	QStringList parts = exec.split(' ', Qt::SkipEmptyParts);
+#else
+	QStringList parts = exec.split(' ', QString::SkipEmptyParts);
+#endif
 	if (parts.isEmpty()) {
 		return QByteArray();
 	}

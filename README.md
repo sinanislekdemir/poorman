@@ -37,6 +37,22 @@ This will create both:
 - **AppImage**: `PoorMansCatalog-1.2.0-x86_64.AppImage`
 - **DEB package**: `poormanscatalog_1.2.0_amd64.deb`
 
+> **Important:** An AppImage inherits the glibc of the machine it is built on.
+> Build it on the *oldest still-supported Ubuntu LTS* (currently 20.04) so it
+> runs on all supported distributions. Releases are built automatically by
+> `.github/workflows/appimage.yml` inside an Ubuntu 20.04 container.
+
+### AppImage-only build (glibc compatible)
+
+`scripts/build-appimage.sh` builds just the AppImage. Run it in an Ubuntu 20.04
+container so the result only depends on an old glibc:
+
+```bash
+podman run --rm -v "$PWD:/work:Z" -w /work \
+  -e INSTALL_DEPS=1 -e VERSION=1.2.0 \
+  ubuntu:20.04 bash scripts/build-appimage.sh
+```
+
 ### Requirements
 
 Install build dependencies:
@@ -50,11 +66,12 @@ sudo apt install qt5-qmake build-essential equivs wget
 #### AppImage
 
 ```bash
-qmake && make
-wget https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
-chmod +x linuxdeploy-x86_64.AppImage
-./linuxdeploy-x86_64.AppImage --appdir AppDir --executable PoorMansCatalog --plugin qt --output appimage
+./scripts/build-appimage.sh
 ```
+
+Run it on Ubuntu 20.04 (or in the container shown above) to keep the AppImage
+compatible with older systems. The script downloads linuxdeploy and its Qt
+plugin, assembles the `AppDir` and produces `PoorMansCatalog-<version>-x86_64.AppImage`.
 
 #### DEB Package
 
