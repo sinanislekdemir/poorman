@@ -7,8 +7,8 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: "Version to embed (e.g. 1.2.1). Defaults to the latest git tag."
-        required: false
+        description: "Version to embed (e.g. 1.2.1)."
+        required: true
         default: ""
 
 permissions:
@@ -42,11 +42,12 @@ jobs:
             file \
             patchelf \
             libfuse2 \
-            desktop-file-utils
+            desktop-file-utils \
+            git
 
       - name: Build AppImage
         env:
-          VERSION: ${{ github.event.inputs.version }}
+          VERSION: ${{ github.event.inputs.version || github.ref_name }}
         run: |
           chmod +x scripts/build-appimage.sh
           ./scripts/build-appimage.sh
@@ -56,16 +57,16 @@ jobs:
         with:
           name: PoorMansCatalog-AppImage
           path: |
-            *.AppImage
-            *.zsync
+            PoorMansCatalog-*.AppImage
+            PoorMansCatalog-*.AppImage.zsync
 
       - name: Attach AppImage to release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            *.AppImage
-            *.zsync
+            PoorMansCatalog-*.AppImage
+            PoorMansCatalog-*.AppImage.zsync
 
   rpm:
     needs: appimage

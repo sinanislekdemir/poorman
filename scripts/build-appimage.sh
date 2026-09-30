@@ -16,7 +16,10 @@ cd "$ROOT_DIR"
 if [ -n "${VERSION:-}" ]; then
     VERSION="${VERSION#v}"
 else
-    VERSION="$(git describe --tags --abbrev=0 2>/dev/null | sed 's/^v//' || true)"
+    VERSION="$(git -c safe.directory="$ROOT_DIR" describe --tags --abbrev=0 2>/dev/null | sed 's/^v//' || true)"
+    if [ -z "$VERSION" ]; then
+        VERSION="$(sed -n 's/^Version:[[:space:]]*//p' poormanscatalog.spec 2>/dev/null | head -1)"
+    fi
     VERSION="${VERSION:-0.0.0}"
 fi
 
@@ -44,7 +47,8 @@ if [ "${INSTALL_DEPS:-0}" = "1" ]; then
         file \
         patchelf \
         libfuse2 \
-        desktop-file-utils
+        desktop-file-utils \
+        git
 fi
 
 echo "==> Building ${APP_NAME} ${VERSION}"
