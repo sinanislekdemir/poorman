@@ -22,8 +22,11 @@ rm -rf "$TOP_DIR"
 mkdir -p "$TOP_DIR"/{BUILD,BUILDROOT,RPMS,SOURCES,SPECS,SRPMS}
 
 echo "==> Creating source tarball ${TARBALL}"
-# Build from the working tree (tracked files) so local changes are included.
-git -c safe.directory="$ROOT_DIR" ls-files -z | tar --null --files-from=- \
+# Build from the working tree (tracked + untracked source files) so local changes are included.
+{
+    git -c safe.directory="$ROOT_DIR" ls-files -z
+    git -c safe.directory="$ROOT_DIR" ls-files --others --exclude-standard -z
+} | tar --null --files-from=- \
     --transform="s,^,poorman-${VERSION}/," \
     -czf "$TOP_DIR/SOURCES/${TARBALL}"
 

@@ -20,6 +20,7 @@ class Scanner : public QThread {
 
       signals:
 	void setProgressFilename(QString);
+	void scanError(QString message);
 	void thumbnailQueueSize(int size);
 
       public slots:

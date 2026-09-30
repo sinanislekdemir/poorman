@@ -43,12 +43,7 @@ void Scanner::run() {
 	this->f_running = true;
 	QDir dir(this->scan_path);
 	if (!dir.exists()) {
-		QMessageBox box;
-		box.setText(tr("Directory does not exist"));
-		box.setStandardButtons(QMessageBox::Ok);
-		box.setIcon(QMessageBox::Warning);
-		box.setWindowTitle("Warning");
-		box.exec();
+		emit scanError(tr("Directory does not exist: %1").arg(this->scan_path));
 		this->stop();
 		return;
 	}
@@ -91,7 +86,7 @@ void Scanner::processDirectory(QString path) {
 		}
 
 		int parent = db->findParent(current_catalog_id, info.absolutePath());
-		int entry_id = db->createDirEntry(info.completeBaseName(), info.absolutePath(), info.absoluteFilePath(), info.size(),
+		int entry_id = db->createDirEntry(info.fileName(), info.absolutePath(), info.absoluteFilePath(), info.size(),
 						  QByteArray(), info.isDir(), parent, current_catalog_id);
 
 		if (entry_id != -1 && with_thumbs && thumb_queue && needsThumbnail(info)) {

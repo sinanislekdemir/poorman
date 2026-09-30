@@ -1,12 +1,27 @@
 #include "mainwindow.h"
 #include "about.h"
 #include "scanner.h"
+#include "theme.h"
 #include "ui_mainwindow.h"
+#include <QApplication>
+#include <QClipboard>
+#include <QCloseEvent>
+#include <QDesktopServices>
 #include <QDir>
+#include <QDockWidget>
+#include <QEventLoop>
 #include <QFile>
 #include <QFileInfo>
 #include <QInputDialog>
+#include <QMessageBox>
+#include <QPixmap>
+#include <QResizeEvent>
+#include <QSettings>
+#include <QShortcut>
+#include <QSignalBlocker>
 #include <QSqlQuery>
+#include <QToolButton>
+#include <QUrl>
 #include <QtWidgets>
 #include <cinttypes>
 #include <cstdint>
@@ -39,6 +54,8 @@ class FileListDelegate : public QStyledItemDelegate {
 		const QIcon icon = qvariant_cast<QIcon>(index.data(Qt::DecorationRole));
 		const QWidget *widget = option.widget;
 		QStyle *style = widget ? widget->style() : QApplication::style();
+		const Theme::Colors &colors = Theme::colors();
+		const bool selected = option.state & QStyle::State_Selected;
 
 		opt.text.clear();
 		opt.icon = QIcon();
@@ -52,9 +69,8 @@ class FileListDelegate : public QStyledItemDelegate {
 			   option.state & QStyle::State_Enabled ? QIcon::Normal : QIcon::Disabled);
 
 		QRect text_rect = content_rect.adjusted(30, 0, 0, 0);
-		QColor primary_color =
-		    option.state & QStyle::State_Selected ? opt.palette.color(QPalette::HighlightedText) : QColor("#E5EEF9");
-		QColor secondary_color = option.state & QStyle::State_Selected ? QColor("#DBEAFE") : QColor("#8FA1B7");
+		QColor primary_color = selected ? opt.palette.color(QPalette::HighlightedText) : colors.text;
+		QColor secondary_color = selected ? colors.selectionText : colors.muted;
 
 		QFont primary_font = opt.font;
 		primary_font.setWeight(QFont::DemiBold);
@@ -94,318 +110,360 @@ QString humanSize(uint64_t bytes) {
 
 MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWindow) {
 	ui->setupUi(this);
+
+	selected_catalog = -2;
+	in_search_mode = false;
+	current_search_and_join = true;
+	this->db_file_path = QDir::home().absolutePath() + "/poorman.sqlite";
+
+	setupToolBar();
+	setupStatusBar();
 	applyModernUi();
+	setupPreviewDock();
+	setupIcons();
+	updateThemeAction();
+
 	connect(ui->actionAdd_path, &QAction::triggered, this, &MainWindow::AddPath);
 	connect(ui->addPathNoThumb, &QAction::triggered, this, &MainWindow::AddPathFast);
 	connect(ui->actionSave_catalog_file, &QAction::triggered, this, &MainWindow::SaveAs);
-	connect(ui->catalogList, QOverload<int>::of(&QComboBox::currentIndexChanged), this,
-		[this](int) { ShowSelectedCatalog(); });
-	connect(ui->directoryTree, &QTreeWidget::itemSelectionChanged, this, &MainWindow::ShowSelectedDirectory);
-	connect(ui->fileList, &QTableWidget::itemSelectionChanged, this, &MainWindow::ShowThumbnail);
 	connect(ui->actionOpen_catalog_file, &QAction::triggered, this, &MainWindow::OpenDB);
-	connect(ui->searchButton, &QPushButton::clicked, this, &MainWindow::SearchFile);
-	connect(ui->clearSearchButton, &QPushButton::clicked, this, &MainWindow::ClearSearch);
-	connect(ui->searchHelpButton, &QPushButton::clicked, this, &MainWindow::ShowSearchHelp);
 	connect(ui->actionQuit, &QAction::triggered, this, &MainWindow::Quit);
 	connect(ui->actionAbout, &QAction::triggered, this, &MainWindow::ShowAbout);
-	this->db_file_path = QDir::home().absolutePath() + "/poorman.sqlite";
+	connect(ui->actionFocus_search, &QAction::triggered, this, &MainWindow::focusSearch);
+	connect(ui->actionSearch_help, &QAction::triggered, this, &MainWindow::ShowSearchHelp);
+	connect(ui->actionToggle_theme, &QAction::triggered, this, &MainWindow::toggleTheme);
+	connect(ui->actionGithub_Pages, &QAction::triggered, this, []() {
+		QDesktopServices::openUrl(QUrl("https://github.com/sinanislekdemir/poorman"));
+	});
+
+	connect(catalogList, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this](int) { ShowSelectedCatalog(); });
+	connect(ui->directoryTree, &QTreeWidget::itemSelectionChanged, this, &MainWindow::ShowSelectedDirectory);
+	connect(ui->fileList, &QTableWidget::itemSelectionChanged, this, &MainWindow::ShowThumbnail);
+	connect(ui->fileList, &QWidget::customContextMenuRequested, this, &MainWindow::fileListContextMenuRequested);
+
+	connect(searchInput, &QLineEdit::returnPressed, this,
+		[this]() { executeSearch(searchInput->text().trimmed(), searchModeBox->currentIndex() == 0); });
+	connect(searchModeBox, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this](int index) {
+		if (in_search_mode) {
+			executeSearch(searchInput->text().trimmed(), index == 0);
+		}
+	});
+	QShortcut *escape = new QShortcut(QKeySequence(Qt::Key_Escape), searchInput);
+	connect(escape, &QShortcut::activated, this, [this]() {
+		searchInput->clear();
+		ClearSearch();
+	});
+
+	catalogList->setContextMenuPolicy(Qt::CustomContextMenu);
+	connect(catalogList, &QWidget::customContextMenuRequested, this, &MainWindow::catalogContextMenuRequested);
+
+	folderIcon = iconProvider.icon(QFileIconProvider::Folder);
+	driveIcon = iconProvider.icon(QFileIconProvider::Drive);
+
 	db = new DBManager(this->db_file_path);
 	thumbQueue = new ThumbnailQueue(this, db_file_path);
 	connect(thumbQueue, &ThumbnailQueue::queueSizeChanged, this, &MainWindow::updateThumbnailQueueStatus);
 	this->scanner = new Scanner(this, db_file_path);
 	this->scanner->setThumbnailQueue(thumbQueue);
 	connect(this->scanner, SIGNAL(setProgressFilename(QString)), this, SLOT(createPathEntry(QString)));
-	folderIcon = iconProvider.icon(QFileIconProvider::Folder);
-	driveIcon = iconProvider.icon(QFileIconProvider::Drive);
-	ui->catalogList->setContextMenuPolicy(Qt::CustomContextMenu);
-	connect(ui->catalogList, SIGNAL(customContextMenuRequested(QPoint)), this, SLOT(catalogContextMenuRequested(QPoint)));
-	selected_catalog = -2;
-	in_search_mode = false;
-	current_search_and_join = true;
-	hasPreviewPopupPosition = false;
+	connect(this->scanner, SIGNAL(scanError(QString)), this, SLOT(showScanError(QString)));
+	connect(this->scanner, &QThread::started, this, [this]() { updateScanState(true); });
+	connect(this->scanner, &QThread::finished, this, [this]() { updateScanState(false); });
+
+	loadSettings();
 	refresh();
 }
 
 void MainWindow::Quit() { QCoreApplication::quit(); }
 
-void MainWindow::applyModernUi() {
-	ui->catalogList->setIconSize(QSize(18, 18));
-	ui->catalogList->setSizeAdjustPolicy(QComboBox::AdjustToContents);
-	ui->catalogList->setInsertPolicy(QComboBox::NoInsert);
-	ui->catalogList->setMinimumContentsLength(1);
-	ui->horizontalLayout->setSpacing(2);
-	ui->horizontalLayout->setContentsMargins(2, 2, 2, 2);
-	ui->verticalLayout_4->setSpacing(2);
-	ui->verticalLayout_4->setContentsMargins(2, 2, 2, 2);
-	ui->verticalLayout_3->setSpacing(2);
-	ui->verticalLayout_3->setContentsMargins(0, 0, 0, 0);
-	ui->verticalLayout_2->setContentsMargins(0, 0, 0, 0);
-	ui->verticalLayout->setSpacing(2);
-	ui->verticalLayout->setContentsMargins(0, 0, 0, 0);
-	ui->horizontalLayout_5->setSpacing(2);
-	ui->horizontalLayout_5->setContentsMargins(3, 2, 3, 2);
-	ui->horizontalLayout_3->setSpacing(2);
-	ui->verticalLayout_5->setSpacing(2);
-	ui->verticalLayout_5->setContentsMargins(3, 3, 3, 3);
-	ui->verticalLayout_6->setSpacing(2);
-	ui->verticalLayout_6->setContentsMargins(3, 3, 3, 3);
-	ui->horizontalLayout_6->setSpacing(2);
-	ui->toolbarFrame->setMaximumHeight(38);
-	ui->horizontalLayout_5->insertWidget(1, ui->catalogList, 0);
-	previewToggle = new QCheckBox(tr("Enable preview"), ui->toolbarFrame);
-	previewToggle->setChecked(false);
-	ui->horizontalLayout_5->insertWidget(3, previewToggle);
-	connect(previewToggle, &QCheckBox::toggled, this, [this](bool enabled) {
-		if (!enabled) {
-			closePreviewPopup();
+void MainWindow::setupToolBar() {
+	toolBar = addToolBar(tr("Main"));
+	toolBar->setObjectName("mainToolBar");
+	toolBar->setMovable(false);
+	toolBar->setFloatable(false);
+	toolBar->setIconSize(QSize(18, 18));
+	toolBar->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
+
+	toolbarHintLabel = new QLabel(tr("Catalog:"), toolBar);
+	toolBar->addWidget(toolbarHintLabel);
+
+	catalogList = new QComboBox(toolBar);
+	catalogList->setIconSize(QSize(18, 18));
+	catalogList->setSizeAdjustPolicy(QComboBox::AdjustToContents);
+	catalogList->setMinimumContentsLength(14);
+	catalogList->setToolTip(tr("Select a catalog. Right-click for options."));
+	toolBar->addWidget(catalogList);
+
+	toolBar->addSeparator();
+	toolBar->addAction(ui->actionAdd_path);
+	toolBar->addAction(ui->addPathNoThumb);
+	toolBar->addAction(ui->actionOpen_catalog_file);
+	toolBar->addAction(ui->actionSave_catalog_file);
+	toolBar->addSeparator();
+
+	for (QAction *action : {ui->actionAdd_path, ui->addPathNoThumb, ui->actionOpen_catalog_file, ui->actionSave_catalog_file}) {
+		if (QToolButton *button = qobject_cast<QToolButton *>(toolBar->widgetForAction(action))) {
+			button->setToolButtonStyle(Qt::ToolButtonIconOnly);
+		}
+	}
+
+	searchInput = new QLineEdit(toolBar);
+	searchInput->setClearButtonEnabled(true);
+	searchInput->setPlaceholderText(tr("Search file names…  (e.g. vacation 2023)"));
+	searchInput->setMinimumWidth(220);
+	searchInput->setMaximumWidth(460);
+	searchInput->setToolTip(tr("Search file names only. Press Enter to search, Esc to clear."));
+	searchInput->addAction(Theme::icon("edit-find"), QLineEdit::LeadingPosition);
+
+	searchModeBox = new QComboBox(toolBar);
+	searchModeBox->addItem(tr("Search all"));
+	searchModeBox->addItem(tr("Search any"));
+	searchModeBox->setToolTip(tr("Require all keywords or any keyword"));
+
+	searchAction = new QAction(Theme::icon("edit-find"), tr("Search"), this);
+	browseAction = new QAction(Theme::icon("edit-clear"), tr("Browse"), this);
+	browseAction->setEnabled(false);
+	helpAction = new QAction(Theme::icon("help-browser"), tr("Search help"), this);
+
+	toolBar->addWidget(searchInput);
+	toolBar->addWidget(searchModeBox);
+	toolBar->addAction(searchAction);
+	toolBar->addAction(browseAction);
+	toolBar->addAction(helpAction);
+	toolBar->addSeparator();
+
+	previewToggle = new QCheckBox(tr("Preview"), toolBar);
+	previewToggle->setToolTip(tr("Show the preview panel for the selected file"));
+	toolBar->addWidget(previewToggle);
+
+	connect(searchAction, &QAction::triggered, this,
+		[this]() { executeSearch(searchInput->text().trimmed(), searchModeBox->currentIndex() == 0); });
+	connect(browseAction, &QAction::triggered, this, &MainWindow::ClearSearch);
+	connect(helpAction, &QAction::triggered, this, &MainWindow::ShowSearchHelp);
+	connect(previewToggle, &QCheckBox::toggled, ui->actionToggle_preview, &QAction::setChecked);
+	connect(ui->actionToggle_preview, &QAction::toggled, previewToggle, &QCheckBox::setChecked);
+}
+
+void MainWindow::setupStatusBar() {
+	scanProgress = new QProgressBar(this);
+	scanProgress->setRange(0, 0);
+	scanProgress->setTextVisible(false);
+	scanProgress->setFixedWidth(130);
+	scanProgress->setFixedHeight(10);
+	scanProgress->hide();
+
+	thumbStatusLabel = new QLabel(tr("Thumbnails: idle"), this);
+	thumbStatusLabel->setMinimumWidth(150);
+	thumbStatusLabel->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+
+	ui->statusbar->addPermanentWidget(scanProgress);
+	ui->statusbar->addPermanentWidget(thumbStatusLabel);
+	ui->statusbar->showMessage(tr("Ready"));
+}
+
+void MainWindow::setupPreviewDock() {
+	previewDock = new QDockWidget(tr("Preview"), this);
+	previewDock->setObjectName("previewDock");
+	previewDock->setAllowedAreas(Qt::RightDockWidgetArea | Qt::LeftDockWidgetArea);
+	previewDock->setFeatures(QDockWidget::DockWidgetClosable | QDockWidget::DockWidgetMovable);
+
+	QWidget *panel = new QWidget(previewDock);
+	QVBoxLayout *layout = new QVBoxLayout(panel);
+	layout->setContentsMargins(8, 8, 8, 8);
+	layout->setSpacing(8);
+
+	previewImage = new QLabel(panel);
+	previewImage->setObjectName("previewImage");
+	previewImage->setAlignment(Qt::AlignCenter);
+	previewImage->setMinimumSize(220, 180);
+	previewImage->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
+
+	previewName = new QLabel(panel);
+	previewName->setObjectName("previewName");
+	previewName->setWordWrap(true);
+
+	previewMeta = new QLabel(panel);
+	previewMeta->setObjectName("previewMeta");
+	previewMeta->setWordWrap(true);
+
+	layout->addWidget(previewImage, 1);
+	layout->addWidget(previewName);
+	layout->addWidget(previewMeta);
+	previewDock->setWidget(panel);
+	addDockWidget(Qt::RightDockWidgetArea, previewDock);
+	previewDock->hide();
+
+	connect(ui->actionToggle_preview, &QAction::toggled, previewDock, &QWidget::setVisible);
+	connect(previewDock, &QDockWidget::visibilityChanged, this, [this](bool visible) {
+		QSignalBlocker block_action(ui->actionToggle_preview);
+		QSignalBlocker block_toggle(previewToggle);
+		ui->actionToggle_preview->setChecked(visible);
+		previewToggle->setChecked(visible);
+		if (visible) {
+			updatePreviewForCurrentRow();
 		}
 	});
-	ui->leftPanel->hide();
-	ui->catalogToggleButton->hide();
+}
+
+void MainWindow::setupIcons() {
+	ui->actionAdd_path->setIcon(Theme::icon("folder-add"));
+	ui->addPathNoThumb->setIcon(Theme::icon("flash"));
+	ui->actionOpen_catalog_file->setIcon(Theme::icon("folder-open"));
+	ui->actionSave_catalog_file->setIcon(Theme::icon("document-save"));
+	ui->actionQuit->setIcon(Theme::icon("application-exit"));
+	ui->actionAbout->setIcon(Theme::icon("dialog-information"));
+	ui->actionSearch_help->setIcon(Theme::icon("help-browser"));
+	ui->actionFocus_search->setIcon(Theme::icon("edit-find"));
+	ui->actionToggle_theme->setIcon(Theme::icon("preferences-system"));
+	ui->actionToggle_preview->setIcon(Theme::icon("view-list"));
+	if (searchAction) searchAction->setIcon(Theme::icon("edit-find"));
+	if (browseAction) browseAction->setIcon(Theme::icon("edit-clear"));
+	if (helpAction) helpAction->setIcon(Theme::icon("help-browser"));
+	if (searchInput) {
+		for (QAction *action : searchInput->actions()) {
+			action->setIcon(Theme::icon("edit-find"));
+		}
+	}
+}
+
+void MainWindow::updateThemeAction() {
+	ui->actionToggle_theme->setText(Theme::current() == Theme::Mode::Dark ? tr("Switch to light theme")
+									     : tr("Switch to dark theme"));
+}
+
+void MainWindow::applyModernUi() {
 	ui->directoryTree->setAnimated(true);
-	ui->directoryTree->setIndentation(14);
+	ui->directoryTree->setIndentation(16);
 	ui->directoryTree->setUniformRowHeights(true);
+	ui->directoryTree->setIconSize(QSize(18, 18));
+
 	ui->fileList->setAlternatingRowColors(true);
 	ui->fileList->setShowGrid(false);
 	ui->fileList->setSelectionBehavior(QAbstractItemView::SelectRows);
 	ui->fileList->setSelectionMode(QAbstractItemView::SingleSelection);
 	ui->fileList->setEditTriggers(QAbstractItemView::NoEditTriggers);
 	ui->fileList->setIconSize(QSize(18, 18));
+	ui->fileList->setItemDelegateForColumn(0, new FileListDelegate(ui->fileList));
 	ui->fileList->verticalHeader()->setVisible(false);
 	ui->fileList->verticalHeader()->setDefaultSectionSize(58);
-	ui->fileList->setItemDelegateForColumn(0, new FileListDelegate(ui->fileList));
-	ui->clearSearchButton->setEnabled(false);
-	ui->resultsSummaryLabel->setText(tr("Select a folder or run a search"));
-	ui->foldersSubtitleLabel->setText(tr("Choose a catalog to browse"));
-	ui->toolbarHintLabel->setText(tr("Catalog"));
+	ui->fileList->horizontalHeader()->setHighlightSections(false);
+	ui->fileList->horizontalHeader()->setStretchLastSection(false);
 
 	if (QHBoxLayout *mid_layout = qobject_cast<QHBoxLayout *>(ui->midSection->layout())) {
-		QSplitter *browser_splitter = new QSplitter(Qt::Horizontal, ui->midSection);
-		browser_splitter->setObjectName("browserSplitter");
+		browserSplitter = new QSplitter(Qt::Horizontal, ui->midSection);
+		browserSplitter->setObjectName("browserSplitter");
+		browserSplitter->setChildrenCollapsible(false);
+		browserSplitter->setHandleWidth(10);
 		mid_layout->removeWidget(ui->directoryPanel);
 		mid_layout->removeWidget(ui->filePanel);
-		browser_splitter->addWidget(ui->directoryPanel);
-		browser_splitter->addWidget(ui->filePanel);
-		browser_splitter->setChildrenCollapsible(false);
-		browser_splitter->setHandleWidth(10);
-		browser_splitter->setStretchFactor(0, 0);
-		browser_splitter->setStretchFactor(1, 1);
-		browser_splitter->setSizes(QList<int>() << 220 << 720);
-		mid_layout->addWidget(browser_splitter);
+		browserSplitter->addWidget(ui->directoryPanel);
+		browserSplitter->addWidget(ui->filePanel);
+		browserSplitter->setStretchFactor(0, 0);
+		browserSplitter->setStretchFactor(1, 1);
+		browserSplitter->setSizes(QList<int>() << 240 << 900);
+		mid_layout->addWidget(browserSplitter);
 	}
 
-	setStyleSheet(R"(
-QMainWindow, QWidget#centralwidget {
-	background-color: #0B1220;
-	color: #E2E8F0;
+	emptyStateLabel = new QLabel(tr("No files to show.\nSelect a folder or run a search."), ui->filePanel);
+	emptyStateLabel->setObjectName("emptyStateLabel");
+	emptyStateLabel->setAlignment(Qt::AlignCenter);
+	emptyStateLabel->setWordWrap(true);
+	if (QVBoxLayout *file_layout = qobject_cast<QVBoxLayout *>(ui->filePanel->layout())) {
+		file_layout->addWidget(emptyStateLabel);
+	}
+
+	ui->resultsSummaryLabel->setText(tr("Select a folder or run a search"));
+	ui->foldersSubtitleLabel->setText(tr("Choose a catalog to browse"));
 }
 
-QMenuBar {
-	background-color: #0F172A;
-	color: #E2E8F0;
-	border-bottom: 1px solid #1E293B;
+void MainWindow::loadSettings() {
+	QSettings settings;
+	restoreGeometry(settings.value("window/geometry").toByteArray());
+
+	const bool preview = settings.value("view/preview", false).toBool();
+	{
+		QSignalBlocker blocker(previewToggle);
+		previewToggle->setChecked(preview);
+	}
+	{
+		QSignalBlocker blocker(ui->actionToggle_preview);
+		ui->actionToggle_preview->setChecked(preview);
+	}
+	if (previewDock) {
+		previewDock->setVisible(preview);
+	}
+
+	const bool and_join = settings.value("search/and_join", true).toBool();
+	{
+		QSignalBlocker blocker(searchModeBox);
+		searchModeBox->setCurrentIndex(and_join ? 0 : 1);
+	}
+	current_search_and_join = and_join;
+
+	if (browserSplitter) {
+		browserSplitter->restoreState(settings.value("window/splitter").toByteArray());
+	}
 }
 
-QMenuBar::item {
-	background: transparent;
-	padding: 6px 10px;
-	border-radius: 8px;
+void MainWindow::saveSettings() {
+	QSettings settings;
+	settings.setValue("window/geometry", saveGeometry());
+	if (browserSplitter) {
+		settings.setValue("window/splitter", browserSplitter->saveState());
+	}
+	settings.setValue("view/preview", previewToggle && previewToggle->isChecked());
+	settings.setValue("search/and_join", searchModeBox && searchModeBox->currentIndex() == 0);
+	Theme::saveMode(Theme::current());
 }
 
-QMenuBar::item:selected,
-QMenu::item:selected {
-	background-color: #1D4ED8;
-	color: #F8FAFC;
+void MainWindow::closeEvent(QCloseEvent *event) {
+	saveSettings();
+	QMainWindow::closeEvent(event);
 }
 
-QMenu {
-	background-color: #111827;
-	color: #E2E8F0;
-	border: 1px solid #1F2937;
+void MainWindow::resizeEvent(QResizeEvent *event) {
+	QMainWindow::resizeEvent(event);
+	updatePreviewImage();
 }
 
-QFrame#directoryPanel,
-QFrame#filePanel,
-QFrame#toolbarFrame {
-	background-color: #111827;
-	border: 1px solid #1F2937;
-	border-radius: 8px;
+void MainWindow::toggleTheme() {
+	Theme::Mode next = Theme::current() == Theme::Mode::Dark ? Theme::Mode::Light : Theme::Mode::Dark;
+	Theme::apply(next);
+	setupIcons();
+	updateThemeAction();
+	ui->fileList->viewport()->update();
+	ui->directoryTree->viewport()->update();
 }
 
-QLabel#foldersTitleLabel,
-QLabel#resultsTitleLabel {
-	color: #F8FAFC;
-	font-size: 14px;
-	font-weight: 700;
-}
-
-QLabel#foldersSubtitleLabel {
-	color: #8FA1B7;
-}
-
-QLabel#resultsSummaryLabel {
-	color: #7DD3FC;
-	font-weight: 600;
-}
-
-QLabel#toolbarHintLabel {
-	color: #8FA1B7;
-}
-
-QLabel#imageLabel {
-	background-color: #0F172A;
-	border: 1px solid #1F2937;
-	border-radius: 8px;
-	padding: 2px;
-}
-
-QListWidget:focus,
-QTreeWidget:focus,
-QTableWidget:focus {
-	border: 1px solid #3B82F6;
-}
-
-QPushButton {
-	background-color: #1D4ED8;
-	border: none;
-	border-radius: 8px;
-	color: #F8FAFC;
-	padding: 3px 8px;
-	font-weight: 600;
-}
-
-QPushButton:hover {
-	background-color: #2563EB;
-}
-
-QPushButton#clearSearchButton {
-	background-color: #172033;
-}
-
-QPushButton#searchHelpButton {
-	background-color: #172033;
-	min-width: 28px;
-	max-width: 28px;
-	padding: 5px 0;
-}
-
-QComboBox {
-	background-color: #0F172A;
-	border: 1px solid #1F2937;
-	border-radius: 8px;
-	padding: 2px 6px;
-	color: #E2E8F0;
-}
-
-QComboBox::drop-down {
-	border: none;
-	width: 22px;
-}
-
-QCheckBox {
-	color: #CBD5E1;
-	spacing: 5px;
-	padding: 0 4px;
-}
-
-QCheckBox::indicator {
-	width: 14px;
-	height: 14px;
-}
-
-QListWidget,
-QTreeWidget,
-QTableWidget {
-	background-color: #0F172A;
-	alternate-background-color: #131C2E;
-	border: 1px solid #1F2937;
-	border-radius: 8px;
-	padding: 1px;
-	selection-background-color: #1D4ED8;
-	selection-color: #F8FAFC;
-	outline: 0;
-}
-
-QListWidget::item,
-QTreeWidget::item,
-QTableWidget::item {
-	border-radius: 6px;
-	padding: 2px 3px;
-}
-
-QHeaderView::section {
-	background-color: #111827;
-	color: #8FA1B7;
-	border: none;
-	border-bottom: 1px solid #1F2937;
-	padding: 4px 6px;
-	font-weight: 600;
-}
-
-QSplitter::handle {
-	background-color: #334155;
-	border-radius: 1px;
-}
-
-QSplitter::handle:horizontal {
-	width: 10px;
-}
-
-QScrollBar:vertical,
-QScrollBar:horizontal {
-	background: transparent;
-	border: none;
-	margin: 4px;
-}
-
-QScrollBar::handle:vertical,
-QScrollBar::handle:horizontal {
-	background-color: #334155;
-	border-radius: 6px;
-	min-height: 28px;
-	min-width: 28px;
-}
-
-QScrollBar::add-line,
-QScrollBar::sub-line,
-QScrollBar::add-page,
-QScrollBar::sub-page {
-	background: transparent;
-	border: none;
-}
-
-QStatusBar {
-	background-color: #0F172A;
-	color: #8FA1B7;
-	border-top: 1px solid #1F2937;
-}
-)");
+void MainWindow::focusSearch() {
+	searchInput->setFocus();
+	searchInput->selectAll();
 }
 
 void MainWindow::catalogContextMenuRequested(QPoint pos) {
-	if (ui->catalogList->currentIndex() < 0) {
+	if (catalogList->currentIndex() < 0) {
 		return;
 	}
-	QMenu *menu = new QMenu(this);
-	QAction *rescanPath = new QAction(tr("Re-scan catalog for new files"), this);
-	QAction *deleteCatalog = new QAction(tr("Re-scan catalog for deleted files"), this);
-	connect(rescanPath, &QAction::triggered, this, &MainWindow::rescanCatalog);
-	connect(deleteCatalog, &QAction::triggered, this, &MainWindow::deleteCatalog);
-	menu->addAction(rescanPath);
-	menu->addAction(deleteCatalog);
-	menu->popup(ui->catalogList->mapToGlobal(pos));
+	QMenu menu(this);
+	QAction *rescanPath = menu.addAction(tr("Re-scan catalog for new files"));
+	QAction *removeGone = menu.addAction(tr("Re-scan catalog for deleted files"));
+	QAction *chosen = menu.exec(catalogList->mapToGlobal(pos));
+	if (!chosen) {
+		return;
+	}
+	if (chosen == rescanPath) {
+		rescanCatalog();
+	} else if (chosen == removeGone) {
+		deleteCatalog();
+	}
 }
 
 void MainWindow::rescanCatalog() {
 	if (this->scanner->running()) {
-		QMessageBox box;
-		box.setText(tr("There is an active scanner running"));
-		box.setIcon(QMessageBox::Warning);
-		box.setStandardButtons(QMessageBox::Ok);
-		box.exec();
+		QMessageBox::warning(this, tr("Scan"), tr("There is an active scanner running"));
 		return;
 	}
-	QString selected = ui->catalogList->currentText();
+	QString selected = catalogList->currentText();
 	QString path = "";
 
 	QSqlQuery catalogs = db->fetchCatalogs();
@@ -414,11 +472,7 @@ void MainWindow::rescanCatalog() {
 			path = catalogs.value("original_path").toString();
 			QDir dir(path);
 			if (!dir.exists()) {
-				QMessageBox box;
-				box.setText(tr("Catalog path is not reachable") + "\n" + path);
-				box.setIcon(QMessageBox::Warning);
-				box.setStandardButtons(QMessageBox::Ok);
-				box.exec();
+				QMessageBox::warning(this, tr("Scan"), tr("Catalog path is not reachable") + "\n" + path);
 				return;
 			}
 			ui->statusbar->showMessage(tr("Scanning: ") + path);
@@ -430,7 +484,7 @@ void MainWindow::rescanCatalog() {
 };
 
 void MainWindow::deleteCatalog() {
-	QString selected = ui->catalogList->currentText();
+	QString selected = catalogList->currentText();
 	QString path = "";
 	QVector<int> ids;
 	int catalog_id = -1;
@@ -440,11 +494,7 @@ void MainWindow::deleteCatalog() {
 			path = catalogs.value("original_path").toString();
 			QDir dir(path);
 			if (!dir.exists()) {
-				QMessageBox box;
-				box.setText(tr("Catalog path is not reachable") + "\n" + path);
-				box.setIcon(QMessageBox::Warning);
-				box.setStandardButtons(QMessageBox::Ok);
-				box.exec();
+				QMessageBox::warning(this, tr("Scan"), tr("Catalog path is not reachable") + "\n" + path);
 				return;
 			}
 			catalog_id = catalogs.value("ids").toInt();
@@ -466,95 +516,104 @@ void MainWindow::deleteCatalog() {
 			ui->statusbar->showMessage(tr("Deleting old entries:") + QString::number(ids.length()));
 			db->deleteFiles(catalog_id, ids);
 			refresh();
+		} else {
+			ui->statusbar->showMessage(tr("No deleted files found"));
 		}
 	}
 };
 
 void MainWindow::ShowAbout() {
-	About about;
+	About about(this);
 	about.setModal(true);
 	about.exec();
 }
 
 void MainWindow::ShowSearchHelp() {
-	QMessageBox helpBox;
+	QMessageBox helpBox(this);
 	helpBox.setWindowTitle(tr("Search Help"));
 	helpBox.setTextFormat(Qt::RichText);
 	helpBox.setText(
 	    tr("<h3>Search Syntax</h3>"
 	       "<p><b>Basic Search:</b><br>"
-	       "Type keywords separated by spaces to search file names and paths.</p>"
+	       "Type keywords separated by spaces to search file names.</p>"
 	       "<p><b>Search Modes:</b><br>"
-	       "• <b>Search all</b> - Files must contain ALL keywords<br>"
-	       "• <b>Search any</b> - Files containing ANY keyword</p>"
+	       "• <b>Search all</b> - File names must contain ALL keywords<br>"
+	       "• <b>Search any</b> - File names containing ANY keyword</p>"
 	       "<p><b>Examples:</b><br>"
 	       "• <code>vacation 2023</code> - finds files with both 'vacation' AND '2023'<br>"
 	       "• <code>jpg png</code> - with 'Search any' finds all .jpg OR .png files<br>"
-	       "• <code>report final</code> - finds files containing both words</p>"
+	       "• <code>report final.pdf</code> - finds files containing both words</p>"
 	       "<p><b>Tips:</b><br>"
 	       "• Search is case-insensitive<br>"
-	       "• Searches in full file path (directory + filename)<br>"
+	       "• Only file names are matched, not the folders in their path<br>"
 	       "• Use specific keywords for better results</p>"));
 	helpBox.setIcon(QMessageBox::Information);
 	helpBox.setStandardButtons(QMessageBox::Ok);
 	helpBox.exec();
 }
 
-void MainWindow::ShowThumbnail() {
-	int row = ui->fileList->currentRow();
-	if (row < 0) {
-		closePreviewPopup();
-		return;
-	}
-	QTableWidgetItem *fname_widget = ui->fileList->item(row, 0);
-	if (fname_widget == NULL) {
-		closePreviewPopup();
-		return;
-	}
-	int id = fname_widget->data(EntryIdRole).toInt();
-	int catalog_id = fname_widget->data(Qt::UserRole).toInt();
+void MainWindow::ShowThumbnail() { updatePreviewForCurrentRow(); }
 
-	if (in_search_mode && catalog_id != selected_catalog)
+void MainWindow::updatePreviewForCurrentRow() {
+	int row = ui->fileList->currentRow();
+	QTableWidgetItem *item = row >= 0 ? ui->fileList->item(row, 0) : nullptr;
+	if (!item) {
+		clearPreview();
+		return;
+	}
+
+	int id = item->data(EntryIdRole).toInt();
+	int catalog_id = item->data(Qt::UserRole).toInt();
+	if (in_search_mode && catalog_id != selected_catalog) {
 		SelectCatalogByID(catalog_id);
+	}
 
 	DirEntry d = db->getDirentry(id);
 	ui->statusbar->showMessage(d.full_path);
-	closePreviewPopup();
-	if (!previewToggle || !previewToggle->isChecked()) {
-		return;
-	}
-	if (d.thumbnail.isEmpty()) {
+	if (!previewDock || !previewDock->isVisible()) {
 		return;
 	}
 
-	QPixmap map;
-	map.loadFromData(d.thumbnail);
-	if (map.isNull()) {
+	QFileInfo info(d.full_path);
+	const QString type_label = d.is_directory
+				       ? tr("Folder")
+				       : (info.suffix().isEmpty() ? tr("File") : info.suffix().toUpper());
+	previewName->setText(info.fileName().isEmpty() ? d.full_path : info.fileName());
+	previewMeta->setText(tr("%1  •  %2\n%3").arg(type_label, humanSize(d.filesize), QDir::toNativeSeparators(d.full_path)));
+
+	if (!d.thumbnail.isEmpty()) {
+		QPixmap map;
+		if (map.loadFromData(d.thumbnail)) {
+			previewSource = map;
+			updatePreviewImage();
+			return;
+		}
+	}
+	previewSource = getCachedFileIcon(d.full_path).pixmap(160, 160);
+	updatePreviewImage();
+}
+
+void MainWindow::updatePreviewImage() {
+	if (!previewImage) {
 		return;
 	}
-
-	QDialog *popup = new QDialog(this, Qt::Tool | Qt::WindowTitleHint | Qt::WindowCloseButtonHint | Qt::WindowStaysOnTopHint);
-	popup->setAttribute(Qt::WA_DeleteOnClose);
-	popup->setWindowTitle(QFileInfo(d.full_path).fileName());
-	QVBoxLayout *layout = new QVBoxLayout(popup);
-	layout->setContentsMargins(4, 4, 4, 4);
-
-	QLabel *preview = new QLabel(popup);
-	preview->setAlignment(Qt::AlignCenter);
-	preview->setMinimumSize(240, 180);
-	preview->setPixmap(map.scaled(720, 540, Qt::KeepAspectRatio, Qt::SmoothTransformation));
-	layout->addWidget(preview);
-
-	if (hasPreviewPopupPosition) {
-		popup->move(previewPopupPosition);
+	if (previewSource.isNull()) {
+		previewImage->clear();
+		return;
 	}
-	previewPopup = popup;
-	connect(popup, &QDialog::finished, this, [this, popup](int) {
-		previewPopupPosition = popup->pos();
-		hasPreviewPopupPosition = true;
-		previewPopup = nullptr;
-	});
-	popup->show();
+	const QSize target = previewImage->size() - QSize(10, 10);
+	if (target.width() <= 0 || target.height() <= 0) {
+		previewImage->setPixmap(previewSource);
+		return;
+	}
+	previewImage->setPixmap(previewSource.scaled(target, Qt::KeepAspectRatio, Qt::SmoothTransformation));
+}
+
+void MainWindow::clearPreview() {
+	previewSource = QPixmap();
+	if (previewImage) previewImage->clear();
+	if (previewName) previewName->clear();
+	if (previewMeta) previewMeta->clear();
 }
 
 void MainWindow::buildTree(QTreeWidgetItem *parent, int catalog_id, int parent_id) {
@@ -574,59 +633,19 @@ void MainWindow::buildTree(QTreeWidgetItem *parent, int catalog_id, int parent_i
 	QApplication::processEvents();
 }
 
-void MainWindow::SearchFile() {
-	QDialog dialog(this);
-	dialog.setWindowTitle(tr("Search files"));
-	dialog.setModal(true);
-
-	QVBoxLayout *layout = new QVBoxLayout(&dialog);
-	layout->setContentsMargins(10, 10, 10, 10);
-	layout->setSpacing(6);
-
-	QLabel *label = new QLabel(tr("Search file names and paths"), &dialog);
-	QLineEdit *search_input = new QLineEdit(&dialog);
-	search_input->setText(current_search_text);
-	search_input->setPlaceholderText(tr("vacation 2023"));
-
-	QComboBox *condition_box = new QComboBox(&dialog);
-	condition_box->addItem(tr("Search all"));
-	condition_box->addItem(tr("Search any"));
-	condition_box->setCurrentIndex(current_search_and_join ? 0 : 1);
-
-	layout->addWidget(label);
-	layout->addWidget(search_input);
-	layout->addWidget(condition_box);
-
-	QDialogButtonBox *button_box = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dialog);
-	QPushButton *clear_button = button_box->addButton(tr("Clear"), QDialogButtonBox::ResetRole);
-	QPushButton *help_button = button_box->addButton(tr("Help"), QDialogButtonBox::HelpRole);
-	layout->addWidget(button_box);
-
-	connect(button_box, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
-	connect(button_box, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
-	connect(help_button, &QPushButton::clicked, this, &MainWindow::ShowSearchHelp);
-	connect(clear_button, &QPushButton::clicked, &dialog, [&]() {
-		search_input->clear();
-		ClearSearch();
-		dialog.reject();
-	});
-
-	search_input->setFocus();
-	search_input->selectAll();
-	if (dialog.exec() != QDialog::Accepted) {
-		return;
-	}
-
-	executeSearch(search_input->text().trimmed(), condition_box->currentIndex() == 0);
-}
-
 void MainWindow::ClearSearch() {
-	closePreviewPopup();
 	current_search_text.clear();
 	current_search_and_join = true;
 	in_search_mode = false;
-	ui->clearSearchButton->setEnabled(false);
-	ui->toolbarHintLabel->setText(tr("Browse folders or run a search"));
+	if (browseAction) {
+		browseAction->setEnabled(false);
+	}
+	if (!searchInput->text().isEmpty()) {
+		QSignalBlocker blocker(searchInput);
+		searchInput->clear();
+	}
+	toolbarHintLabel->setText(tr("Catalog:"));
+	clearPreview();
 	if (ui->directoryTree->currentItem() != NULL) {
 		ShowSelectedDirectory();
 	} else {
@@ -641,7 +660,7 @@ void MainWindow::ShowSelectedDirectory() {
 	int dir_id = ui->directoryTree->currentItem()->data(0, Qt::UserRole).toInt();
 
 	buildTree(ui->directoryTree->currentItem(), selected_catalog, dir_id);
-	closePreviewPopup();
+	clearPreview();
 	QSqlQuery files = db->fetchFiles(dir_id, selected_catalog);
 	in_search_mode = false;
 	updateBrowseContext();
@@ -651,9 +670,9 @@ void MainWindow::ShowSelectedDirectory() {
 void MainWindow::SelectCatalogByID(int id) {
 	ui->directoryTree->clear();
 	selected_catalog = id;
-	for (int i = 0; i < ui->catalogList->count(); i++) {
-		if (ui->catalogList->itemData(i, Qt::UserRole).toInt() == id) {
-			ui->catalogList->setCurrentIndex(i);
+	for (int i = 0; i < catalogList->count(); i++) {
+		if (catalogList->itemData(i, Qt::UserRole).toInt() == id) {
+			catalogList->setCurrentIndex(i);
 			break;
 		}
 	}
@@ -661,23 +680,25 @@ void MainWindow::SelectCatalogByID(int id) {
 
 void MainWindow::ShowSelectedCatalog() {
 	int catalog_id = -1;
-	if (ui->catalogList->currentIndex() >= 0) {
-		catalog_id = ui->catalogList->currentData(Qt::UserRole).toInt();
+	if (catalogList->currentIndex() >= 0) {
+		catalog_id = catalogList->currentData(Qt::UserRole).toInt();
 	}
 	ui->directoryTree->clear();
 	ui->fileList->clearContents();
 	ui->fileList->setRowCount(0);
-	closePreviewPopup();
+	clearPreview();
 	in_search_mode = false;
 	selected_catalog = catalog_id;
-	ui->clearSearchButton->setEnabled(false);
+	if (browseAction) {
+		browseAction->setEnabled(false);
+	}
 	updateBrowseContext();
 	updateResultsSummary(0);
 	if (catalog_id < 0) {
 		return;
 	}
 	QTreeWidgetItem *it = new QTreeWidgetItem();
-	it->setText(0, ui->catalogList->currentText().isEmpty() ? "Root" : ui->catalogList->currentText());
+	it->setText(0, catalogList->currentText().isEmpty() ? "Root" : catalogList->currentText());
 	it->setIcon(0, driveIcon);
 	int root_id = db->getRootId(catalog_id);
 	it->setData(0, Qt::UserRole, root_id);
@@ -687,25 +708,26 @@ void MainWindow::ShowSelectedCatalog() {
 }
 
 void MainWindow::refresh() {
-	ui->catalogList->clear();
+	catalogList->clear();
 	catalogNameCache.clear();
 	QSqlQuery catalogs = db->fetchCatalogs();
 	while (catalogs.next()) {
 		const int catalog_id = catalogs.value("ids").toInt();
 		const QString catalog_name = catalogs.value("name").toString();
-		ui->catalogList->addItem(driveIcon, catalog_name, catalog_id);
+		catalogList->addItem(driveIcon, catalog_name, catalog_id);
 		catalogNameCache.insert(catalog_id, catalog_name);
 	}
 	ui->directoryTree->clear();
 	ui->fileList->clear();
 	ui->fileList->setRowCount(0);
-	closePreviewPopup();
-	ui->resultsSummaryLabel->setText(ui->catalogList->count() > 0 ? tr("Pick a folder or search across a catalog")
-								   : tr("Add a catalog to start browsing"));
+	clearPreview();
+	ui->resultsSummaryLabel->setText(catalogList->count() > 0 ? tr("Pick a folder or search across a catalog")
+								  : tr("Add a catalog to start browsing"));
 	ui->foldersSubtitleLabel->setText(tr("Choose a catalog to browse"));
-	ui->toolbarHintLabel->setText(tr("Catalog"));
-	if (ui->catalogList->count() > 0) {
-		ui->catalogList->setCurrentIndex(0);
+	toolbarHintLabel->setText(tr("Catalog:"));
+	updateEmptyState(0);
+	if (catalogList->count() > 0) {
+		catalogList->setCurrentIndex(0);
 		ShowSelectedCatalog();
 	}
 }
@@ -740,6 +762,9 @@ void MainWindow::OpenDB() {
 	this->scanner = new Scanner(this, db_file_path);
 	this->scanner->setThumbnailQueue(thumbQueue);
 	connect(this->scanner, SIGNAL(setProgressFilename(QString)), this, SLOT(createPathEntry(QString)));
+	connect(this->scanner, SIGNAL(scanError(QString)), this, SLOT(showScanError(QString)));
+	connect(this->scanner, &QThread::started, this, [this]() { updateScanState(true); });
+	connect(this->scanner, &QThread::finished, this, [this]() { updateScanState(false); });
 	this->refresh();
 }
 
@@ -751,17 +776,17 @@ bool FileSizeColumn::operator<(const QTableWidgetItem &other) const {
 };
 
 void MainWindow::ShowFiles(QSqlQuery data, bool fullname) {
+	ui->fileList->setSortingEnabled(false);
+	ui->fileList->setUpdatesEnabled(false);
+	ui->fileList->blockSignals(true);
 	ui->fileList->clearContents();
 	ui->fileList->setColumnCount(3);
 	ui->fileList->setRowCount(0);
 
-	ui->fileList->setSortingEnabled(false);
 	QHeaderView *headerView = ui->fileList->horizontalHeader();
 	headerView->setSectionResizeMode(0, QHeaderView::Stretch);
 	headerView->setSectionResizeMode(1, QHeaderView::ResizeToContents);
 	headerView->setSectionResizeMode(2, QHeaderView::ResizeToContents);
-	headerView->sortIndicatorOrder();
-	headerView->setSortIndicatorShown(true);
 
 	QTableWidgetItem *h_filename = new QTableWidgetItem();
 	h_filename->setText("File");
@@ -776,7 +801,9 @@ void MainWindow::ShowFiles(QSqlQuery data, bool fullname) {
 	h_thumbnail->setText("Preview");
 	ui->fileList->setHorizontalHeaderItem(2, h_thumbnail);
 
+	const Theme::Colors &colors = Theme::colors();
 	int row = 0;
+	int processed = 0;
 	while (data.next()) {
 		ui->fileList->setRowCount(row + 1);
 		QTableWidgetItem *fname = new QTableWidgetItem();
@@ -812,34 +839,33 @@ void MainWindow::ShowFiles(QSqlQuery data, bool fullname) {
 		QTableWidgetItem *fthumb = new QTableWidgetItem();
 		const bool has_thumbnail = data.value("has_thumbnail").toBool();
 		fthumb->setText(has_thumbnail ? tr("Ready") : tr("None"));
-		fthumb->setForeground(has_thumbnail ? QColor("#86EFAC") : QColor("#64748B"));
+		fthumb->setForeground(has_thumbnail ? colors.positive : colors.negative);
 		fthumb->setTextAlignment(Qt::AlignCenter);
 		ui->fileList->setItem(row, 2, fthumb);
 
 		row++;
+		if ((++processed % 200) == 0) {
+			ui->resultsSummaryLabel->setText(tr("Loading… %1").arg(row));
+			QApplication::processEvents(QEventLoop::ExcludeUserInputEvents);
+		}
 	}
+	ui->fileList->blockSignals(false);
+	ui->fileList->setUpdatesEnabled(true);
 	ui->fileList->setSortingEnabled(true);
 	updateResultsSummary(row);
+	updateEmptyState(row);
 }
 
 void MainWindow::AddPath() {
 	QString filename = QFileDialog::getExistingDirectory(this, tr("Choose directory"), QString(),
 							     QFileDialog::ShowDirsOnly | QFileDialog::DontUseNativeDialog);
 	if (filename.isEmpty()) {
-		QMessageBox box;
-		box.setText(tr("No directory selected"));
-		box.setIcon(QMessageBox::Information);
-		box.setStandardButtons(QMessageBox::Ok);
-		box.exec();
+		QMessageBox::information(this, tr("Scan"), tr("No directory selected"));
 		return;
 	}
 	this->scanner->setPath(filename);
 	if (this->scanner->running()) {
-		QMessageBox box;
-		box.setText(tr("There is an active scanner running"));
-		box.setIcon(QMessageBox::Warning);
-		box.setStandardButtons(QMessageBox::Ok);
-		box.exec();
+		QMessageBox::warning(this, tr("Scan"), tr("There is an active scanner running"));
 		return;
 	}
 	QFileInfo finfo(filename);
@@ -860,19 +886,11 @@ void MainWindow::AddPathFast() {
 	QString filename = QFileDialog::getExistingDirectory(this, tr("Choose directory"), QString(),
 							     QFileDialog::ShowDirsOnly | QFileDialog::DontUseNativeDialog);
 	if (filename.isEmpty()) {
-		QMessageBox box;
-		box.setText(tr("No directory selected"));
-		box.setIcon(QMessageBox::Information);
-		box.setStandardButtons(QMessageBox::Ok);
-		box.exec();
+		QMessageBox::information(this, tr("Scan"), tr("No directory selected"));
 		return;
 	}
 	if (this->scanner->running()) {
-		QMessageBox box;
-		box.setText(tr("There is an active scanner running"));
-		box.setIcon(QMessageBox::Warning);
-		box.setStandardButtons(QMessageBox::Ok);
-		box.exec();
+		QMessageBox::warning(this, tr("Scan"), tr("There is an active scanner running"));
 		return;
 	}
 	this->scanner->setPath(filename);
@@ -891,7 +909,6 @@ void MainWindow::AddPathFast() {
 }
 
 MainWindow::~MainWindow() {
-	closePreviewPopup();
 	delete thumbQueue;
 	delete db;
 	delete ui;
@@ -911,31 +928,45 @@ void MainWindow::createPathEntry(QString string) {
 }
 
 void MainWindow::updateThumbnailQueueStatus(int size) {
+	if (!thumbStatusLabel) {
+		return;
+	}
 	if (size > 0) {
-		ui->statusbar->showMessage(tr("Thumbnail queue: %1 pending").arg(size));
+		thumbStatusLabel->setText(tr("Thumbnails: %1 pending").arg(size));
 	} else {
-		ui->statusbar->showMessage(tr("All thumbnails generated"));
+		thumbStatusLabel->setText(tr("Thumbnails: done"));
 	}
 }
 
+void MainWindow::updateScanState(bool running) {
+	if (scanProgress) {
+		scanProgress->setVisible(running);
+	}
+	if (running) {
+		if (thumbStatusLabel) {
+			thumbStatusLabel->setText(tr("Thumbnails: idle"));
+		}
+		ui->statusbar->showMessage(tr("Scanning…"));
+	} else {
+		ui->statusbar->showMessage(tr("Ready"));
+	}
+}
+
+void MainWindow::showScanError(QString message) {
+	QMessageBox::warning(this, tr("Scan"), message);
+	updateScanState(false);
+}
+
 QIcon MainWindow::getCachedFileIcon(const QString &full_path) {
-	auto cached_icon = fileIconCache.constFind(full_path);
+	const QString key = QFileInfo(full_path).suffix().toLower();
+	auto cached_icon = fileIconCache.constFind(key);
 	if (cached_icon != fileIconCache.constEnd()) {
 		return cached_icon.value();
 	}
 
 	QIcon icon = iconProvider.icon(QFileInfo(full_path));
-	fileIconCache.insert(full_path, icon);
+	fileIconCache.insert(key, icon);
 	return icon;
-}
-
-void MainWindow::closePreviewPopup() {
-	if (previewPopup) {
-		previewPopupPosition = previewPopup->pos();
-		hasPreviewPopupPosition = true;
-		previewPopup->close();
-		previewPopup = nullptr;
-	}
 }
 
 void MainWindow::executeSearch(const QString &text, bool and_join) {
@@ -946,24 +977,46 @@ void MainWindow::executeSearch(const QString &text, bool and_join) {
 
 	current_search_text = text;
 	current_search_and_join = and_join;
-	ui->clearSearchButton->setEnabled(true);
-	ui->toolbarHintLabel->setText(tr("Catalog"));
-	closePreviewPopup();
+	if (searchInput->text() != text) {
+		QSignalBlocker blocker(searchInput);
+		searchInput->setText(text);
+	}
+	if (searchModeBox->currentIndex() != (and_join ? 0 : 1)) {
+		QSignalBlocker blocker(searchModeBox);
+		searchModeBox->setCurrentIndex(and_join ? 0 : 1);
+	}
+	if (browseAction) {
+		browseAction->setEnabled(true);
+	}
+	toolbarHintLabel->setText(tr("Search"));
+	clearPreview();
+
+	QApplication::setOverrideCursor(Qt::WaitCursor);
+	if (scanProgress) {
+		scanProgress->setVisible(true);
+	}
+	ui->statusbar->showMessage(tr("Searching: %1").arg(text));
+	QApplication::processEvents(QEventLoop::ExcludeUserInputEvents);
+
 	QSqlQuery files = db->searchFiles(text, and_join, selected_catalog >= 0 ? selected_catalog : -1);
 	in_search_mode = true;
 	ShowFiles(files, true);
+
+	if (scanProgress) {
+		scanProgress->setVisible(false);
+	}
+	QApplication::restoreOverrideCursor();
 }
 
 void MainWindow::updateBrowseContext() {
 	QTreeWidgetItem *folder_item = ui->directoryTree->currentItem();
 	if (folder_item != NULL) {
 		ui->foldersSubtitleLabel->setText(tr("Browsing %1").arg(folder_item->text(0)));
-	} else if (ui->catalogList->currentIndex() >= 0) {
-		ui->foldersSubtitleLabel->setText(tr("Catalog: %1").arg(ui->catalogList->currentText()));
+	} else if (catalogList->currentIndex() >= 0) {
+		ui->foldersSubtitleLabel->setText(tr("Catalog: %1").arg(catalogList->currentText()));
 	} else {
 		ui->foldersSubtitleLabel->setText(tr("Choose a catalog to browse"));
 	}
-	ui->toolbarHintLabel->setText(tr("Catalog"));
 }
 
 void MainWindow::updateResultsSummary(int row_count) {
@@ -985,4 +1038,78 @@ void MainWindow::updateResultsSummary(int row_count) {
 	ui->resultsSummaryLabel->setText(tr("%1 file(s) in %2").arg(row_count).arg(scope));
 }
 
-void MainWindow::toggleCatalogPanel(bool) {}
+void MainWindow::updateEmptyState(int row_count) {
+	if (!emptyStateLabel) {
+		return;
+	}
+	const bool empty = row_count == 0;
+	if (empty) {
+		if (in_search_mode) {
+			emptyStateLabel->setText(tr("No files match your search."));
+		} else if (catalogList->count() == 0) {
+			emptyStateLabel->setText(tr("Add a catalog to start browsing."));
+		} else {
+			emptyStateLabel->setText(tr("No files to show.\nSelect a folder or run a search."));
+		}
+	}
+	emptyStateLabel->setVisible(empty);
+}
+
+void MainWindow::fileListContextMenuRequested(QPoint pos) {
+	if (ui->fileList->rowCount() == 0) {
+		return;
+	}
+	QTableWidgetItem *item = ui->fileList->itemAt(pos);
+	if (!item) {
+		return;
+	}
+	ui->fileList->setCurrentItem(item);
+
+	QMenu menu(this);
+	QAction *open = menu.addAction(Theme::icon("folder-open"), tr("Open containing folder"));
+	QAction *copy_path = menu.addAction(tr("Copy full path"));
+	QAction *copy_name = menu.addAction(tr("Copy file name"));
+	QAction *chosen = menu.exec(ui->fileList->viewport()->mapToGlobal(pos));
+	if (!chosen) {
+		return;
+	}
+	if (chosen == open) {
+		openContainingFolder();
+	} else if (chosen == copy_path) {
+		copyFullPath();
+	} else if (chosen == copy_name) {
+		copyFileName();
+	}
+}
+
+void MainWindow::openContainingFolder() {
+	int row = ui->fileList->currentRow();
+	if (row < 0 || !ui->fileList->item(row, 0)) {
+		return;
+	}
+	int id = ui->fileList->item(row, 0)->data(EntryIdRole).toInt();
+	DirEntry d = db->getDirentry(id);
+	QFileInfo info(d.full_path);
+	QDesktopServices::openUrl(QUrl::fromLocalFile(info.absolutePath()));
+}
+
+void MainWindow::copyFullPath() {
+	int row = ui->fileList->currentRow();
+	if (row < 0 || !ui->fileList->item(row, 0)) {
+		return;
+	}
+	int id = ui->fileList->item(row, 0)->data(EntryIdRole).toInt();
+	DirEntry d = db->getDirentry(id);
+	QApplication::clipboard()->setText(QDir::toNativeSeparators(d.full_path));
+	ui->statusbar->showMessage(tr("Copied path to clipboard"));
+}
+
+void MainWindow::copyFileName() {
+	int row = ui->fileList->currentRow();
+	if (row < 0 || !ui->fileList->item(row, 0)) {
+		return;
+	}
+	QString name = ui->fileList->item(row, 0)->text();
+	QApplication::clipboard()->setText(name);
+	ui->statusbar->showMessage(tr("Copied name to clipboard"));
+}

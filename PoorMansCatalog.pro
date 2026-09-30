@@ -14,6 +14,7 @@ SOURCES += \
     main.cpp \
     mainwindow.cpp \
     scanner.cpp \
+    theme.cpp \
     thumbnailmanager.cpp \
     thumbnailqueue.cpp
 
@@ -22,12 +23,16 @@ HEADERS += \
     dbmanager.h \
     mainwindow.h \
     scanner.h \
+    theme.h \
     thumbnailmanager.h \
     thumbnailqueue.h
 
 FORMS += \
     about.ui \
     mainwindow.ui
+
+RESOURCES += \
+    resources.qrc
 
 LIBS += -lstdc++fs
 

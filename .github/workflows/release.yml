@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: "Version to embed (e.g. 1.2.1)."
+        description: "Version to embed (e.g. 1.2.2)."
         required: true
         default: ""
 

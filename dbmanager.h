@@ -58,6 +58,7 @@ class DBManager {
 	QString db_path;
 	void createTables();
 	void createIndexes();
+	void migrateNames();
 };
 
 #endif // DBMANAGER_H

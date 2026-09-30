@@ -1,5 +1,5 @@
 Name:           poormanscatalog
-Version:        1.2.1
+Version:        1.2.2
 Release:        1%{?dist}
 Summary:        Disk and path catalog creator
 
@@ -50,6 +50,12 @@ desktop-file-validate %{buildroot}%{_datadir}/applications/poormanscatalog.deskt
 %{_datadir}/icons/hicolor/256x256/apps/PoorMansCatalog.png
 
 %changelog
+* Wed Sep 30 2026 Sinan Islekdemir <sinan@islekdemir.com> - 1.2.2-1
+- Modernized UI/UX: Monokai light/dark themes with proper palettes
+- Dockable preview panel replaces the floating popup
+- Inline file-name search with progress feedback; removed redundant dialog
+- Fixed light-theme legibility and full-row selection highlighting
+
 * Wed Sep 30 2026 Sinan Islekdemir <sinan@islekdemir.com> - 1.2.1-1
 - Use Qt's built-in file dialogs to avoid broken native folder picker
 

@@ -1,5 +1,6 @@
 #include "dbmanager.h"
 #include <QDebug>
+#include <QFileInfo>
 #include <QSqlDriver>
 #include <QSqlError>
 #include <QSqlField>
@@ -33,6 +34,7 @@ DBManager::DBManager(QString &dbpath, QString connection_name) {
 			query.exec("PRAGMA synchronous=NORMAL");
 		}
 		createTables();
+		migrateNames();
 	}
 }
 
@@ -62,22 +64,39 @@ QString DBManager::formatSQL(QString keyword) {
 
 QSqlQuery DBManager::searchFiles(QString keyword, bool and_join, int cat_id) {
 	QSqlQuery query(m_db);
-	QString temp = "full_path LIKE '%%1%'";
-	QStringList where;
-	QStringList keywords = keyword.split(" ");
-	for (QString k : keywords) {
-		QString ck = formatSQL(k).replace("'", "");
-		where.append(temp.arg(ck));
+	QStringList keywords;
+	for (const QString &part : keyword.split(' ')) {
+		if (!part.isEmpty()) {
+			keywords.append(part);
+		}
 	}
-	QString joiner = and_join ? " AND " : " OR ";
+
+	QStringList where;
+	for (int i = 0; i < keywords.size(); i++) {
+		where.append(QString("name LIKE :kw%1 ESCAPE '\\'").arg(i));
+	}
+	if (where.isEmpty()) {
+		where.append("0");
+	}
+	const QString joiner = and_join ? " AND " : " OR ";
+
+	QString sql = "SELECT ids, directory, full_path, name, filesize, is_directory, catalog_id, parent_id, "
+		      "thumbnail64 IS NOT NULL AS has_thumbnail FROM direntry WHERE ";
 	if (cat_id == -1) {
-		query.prepare("SELECT ids, directory, full_path, name, filesize, is_directory, catalog_id, parent_id, "
-			      "thumbnail64 IS NOT NULL AS has_thumbnail FROM direntry WHERE (" +
-			      where.join(joiner) + ")");
+		sql += "(" + where.join(joiner) + ")";
 	} else {
-		query.prepare("SELECT ids, directory, full_path, name, filesize, is_directory, catalog_id, parent_id, "
-			      "thumbnail64 IS NOT NULL AS has_thumbnail FROM direntry WHERE catalog_id = (:catalog_id) AND (" +
-			      where.join(joiner) + ")");
+		sql += "catalog_id = (:catalog_id) AND (" + where.join(joiner) + ")";
+	}
+	query.prepare(sql);
+
+	for (int i = 0; i < keywords.size(); i++) {
+		QString escaped = keywords.at(i);
+		escaped.replace("\\", "\\\\");
+		escaped.replace("%", "\\%");
+		escaped.replace("_", "\\_");
+		query.bindValue(QString(":kw%1").arg(i), "%" + escaped + "%");
+	}
+	if (cat_id != -1) {
 		query.bindValue(":catalog_id", cat_id);
 	}
 	query.exec();
@@ -159,6 +178,7 @@ void DBManager::connect() {
 		query.exec("PRAGMA synchronous=NORMAL");
 	}
 	createTables();
+	migrateNames();
 }
 
 /**
@@ -332,4 +352,48 @@ void DBManager::createIndexes() {
 	if (!query.exec()) {
 		qDebug() << "Failed to create browse ids index" << query.lastError();
 	}
+}
+
+/**
+ * @brief One-time migration so the searchable "name" column holds the full
+ *        file name (including extension) instead of just its base name.
+ */
+void DBManager::migrateNames() {
+	QSqlQuery meta(m_db);
+	meta.exec("CREATE TABLE IF NOT EXISTS app_meta (key text primary key, value text)");
+	meta.prepare("SELECT value FROM app_meta WHERE key = 'names_migrated'");
+	meta.exec();
+	if (meta.next() && meta.value(0).toString() == "1") {
+		return;
+	}
+
+	QVector<QPair<int, QString>> updates;
+	QSqlQuery select(m_db);
+	if (select.exec("SELECT ids, full_path, name FROM direntry")) {
+		while (select.next()) {
+			const QString full_path = select.value("full_path").toString();
+			const QString current = select.value("name").toString();
+			const QString expected = QFileInfo(full_path).fileName();
+			if (!expected.isEmpty() && expected != current) {
+				updates.append(qMakePair(select.value("ids").toInt(), expected));
+			}
+		}
+	}
+
+	if (!updates.isEmpty()) {
+		m_db.transaction();
+		QSqlQuery update(m_db);
+		update.prepare("UPDATE direntry SET name = :name WHERE ids = :ids");
+		for (const auto &pair : updates) {
+			update.bindValue(":name", pair.second);
+			update.bindValue(":ids", pair.first);
+			update.exec();
+		}
+		m_db.commit();
+		qDebug() << "Migrated" << updates.size() << "file names";
+	}
+
+	QSqlQuery flag(m_db);
+	flag.prepare("INSERT OR REPLACE INTO app_meta (key, value) VALUES ('names_migrated', '1')");
+	flag.exec();
 }
