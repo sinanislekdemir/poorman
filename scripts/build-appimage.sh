@@ -25,6 +25,10 @@ APPDIR="AppDir"
 DESKTOP_FILE="additional/${APP_NAME}.desktop"
 OUTPUT="${APP_NAME}-${VERSION}-${ARCH}.AppImage"
 
+# Update information embedded in the AppImage so AppImageUpdate/zsync can find
+# new releases. The matching .zsync file must be published next to the AppImage.
+UPDATE_INFO="gh-releases-zsync|sinanislekdemir|poorman|latest|${APP_NAME}-*-${ARCH}.AppImage.zsync"
+
 if [ "${INSTALL_DEPS:-0}" = "1" ]; then
     export DEBIAN_FRONTEND=noninteractive
     apt-get update
@@ -82,6 +86,8 @@ chmod +x linuxdeploy-x86_64.AppImage linuxdeploy-plugin-qt-x86_64.AppImage
 echo "==> Running linuxdeploy"
 export OUTPUT
 export APPIMAGE_EXTRACT_AND_RUN=1
+export LDAI_UPDATE_INFORMATION="$UPDATE_INFO"
+export UPDATE_INFORMATION="$UPDATE_INFO"
 ./linuxdeploy-x86_64.AppImage \
     --appdir "$APPDIR" \
     --plugin qt \
@@ -92,4 +98,9 @@ if [ ! -f "$OUTPUT" ]; then
     exit 1
 fi
 
+if [ ! -f "${OUTPUT}.zsync" ]; then
+    echo "WARNING: ${OUTPUT}.zsync was not generated; AppImageUpdate will not work" >&2
+fi
+
 echo "==> Created $OUTPUT ($(du -h "$OUTPUT" | cut -f1))"
+[ -f "${OUTPUT}.zsync" ] && echo "==> Created ${OUTPUT}.zsync"
