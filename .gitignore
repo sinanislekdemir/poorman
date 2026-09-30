@@ -24,6 +24,7 @@ qrc_*.cpp
 *.rpm
 *.tar.gz
 rpmbuild/
+deb-build/
 
 # linuxdeploy tools
 linuxdeploy*.AppImage

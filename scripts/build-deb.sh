@@ -24,8 +24,9 @@ else
 fi
 
 BUILD_DIR="build"
-STAGE="${PKG_NAME}_${VERSION}_${ARCH}"
-DEB="${STAGE}.deb"
+STAGE_DIR="deb-build"
+STAGE="${STAGE_DIR}/${PKG_NAME}_${VERSION}_${ARCH}"
+DEB="${PKG_NAME}_${VERSION}_${ARCH}.deb"
 
 if [ "${INSTALL_DEPS:-0}" = "1" ]; then
     export DEBIAN_FRONTEND=noninteractive
@@ -42,7 +43,7 @@ if [ "${INSTALL_DEPS:-0}" = "1" ]; then
 fi
 
 echo "==> Building ${APP_NAME} ${VERSION}"
-rm -rf "$BUILD_DIR" "$STAGE" "$DEB"
+rm -rf "$BUILD_DIR" "$STAGE_DIR" "$DEB"
 mkdir -p "$BUILD_DIR"
 
 qmake -o "$BUILD_DIR/Makefile" PoorMansCatalog.pro
@@ -112,6 +113,6 @@ Description: Disk and path catalog creator
  plugging the disk back in.
 EOF
 
-dpkg-deb --root-owner-group --build "$STAGE"
+dpkg-deb --root-owner-group --build "$STAGE" "$DEB"
 
 echo "==> Created $DEB"
