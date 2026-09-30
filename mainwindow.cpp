@@ -711,7 +711,8 @@ void MainWindow::refresh() {
 }
 
 void MainWindow::SaveAs() {
-	QString filename = QFileDialog::getSaveFileName(this, tr("Save catalog database"), "", "SQLite DB (*.sqlite)");
+	QString filename = QFileDialog::getSaveFileName(this, tr("Save catalog database"), "", "SQLite DB (*.sqlite)",
+							 nullptr, QFileDialog::DontUseNativeDialog);
 	if (filename.isEmpty()) {
 		return;
 	}
@@ -723,7 +724,8 @@ void MainWindow::SaveAs() {
 }
 
 void MainWindow::OpenDB() {
-	QString filename = QFileDialog::getOpenFileName(this, tr("Open catalog database"), "", "SQLite DB (*.sqlite)");
+	QString filename = QFileDialog::getOpenFileName(this, tr("Open catalog database"), "", "SQLite DB (*.sqlite)",
+							nullptr, QFileDialog::DontUseNativeDialog);
 	if (filename.isEmpty()) {
 		return;
 	}
@@ -821,7 +823,8 @@ void MainWindow::ShowFiles(QSqlQuery data, bool fullname) {
 }
 
 void MainWindow::AddPath() {
-	QString filename = QFileDialog::getExistingDirectory(this, tr("Choose directory"));
+	QString filename = QFileDialog::getExistingDirectory(this, tr("Choose directory"), QString(),
+							     QFileDialog::ShowDirsOnly | QFileDialog::DontUseNativeDialog);
 	if (filename.isEmpty()) {
 		QMessageBox box;
 		box.setText(tr("No directory selected"));
@@ -854,7 +857,8 @@ void MainWindow::AddPath() {
 }
 
 void MainWindow::AddPathFast() {
-	QString filename = QFileDialog::getExistingDirectory(this, tr("Choose directory"));
+	QString filename = QFileDialog::getExistingDirectory(this, tr("Choose directory"), QString(),
+							     QFileDialog::ShowDirsOnly | QFileDialog::DontUseNativeDialog);
 	if (filename.isEmpty()) {
 		QMessageBox box;
 		box.setText(tr("No directory selected"));

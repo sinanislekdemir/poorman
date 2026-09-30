@@ -10,7 +10,7 @@ There are probably some parts that I totally messed up and the code might need s
 
 ## Download
 
-I have created a 64bit Deb package and a Win64 version here: https://github.com/sinanislekdemir/poorman/releases/tag/v1.2.0 
+I have created a 64bit Deb package and a Win64 version here: https://github.com/sinanislekdemir/poorman/releases/tag/v1.2.1 
 
 <img width="1144" height="671" alt="image" src="https://github.com/user-attachments/assets/54b91a25-cbf6-4ffc-9efc-b8517fab60fb" />
 
@@ -34,13 +34,13 @@ Run the automated packaging script:
 ```
 
 This will create both:
-- **AppImage**: `PoorMansCatalog-1.2.0-x86_64.AppImage`
-- **DEB package**: `poormanscatalog_1.2.0_amd64.deb`
+- **AppImage**: `PoorMansCatalog-1.2.1-x86_64.AppImage`
+- **DEB package**: `poormanscatalog_1.2.1_amd64.deb`
 
 > **Important:** An AppImage inherits the glibc of the machine it is built on.
 > Build it on the *oldest still-supported Ubuntu LTS* (currently 20.04) so it
 > runs on all supported distributions. Releases are built automatically by
-> `.github/workflows/appimage.yml` inside an Ubuntu 20.04 container.
+> `.github/workflows/release.yml` inside an Ubuntu 20.04 container.
 
 ### AppImage-only build (glibc compatible)
 
@@ -49,7 +49,7 @@ container so the result only depends on an old glibc:
 
 ```bash
 podman run --rm -v "$PWD:/work:Z" -w /work \
-  -e INSTALL_DEPS=1 -e VERSION=1.2.0 \
+  -e INSTALL_DEPS=1 -e VERSION=1.2.1 \
   ubuntu:20.04 bash scripts/build-appimage.sh
 ```
 
@@ -84,12 +84,12 @@ equivs-build package.conf
 
 **AppImage:**
 ```bash
-chmod +x PoorMansCatalog-1.2.0-x86_64.AppImage
-./PoorMansCatalog-1.2.0-x86_64.AppImage
+chmod +x PoorMansCatalog-1.2.1-x86_64.AppImage
+./PoorMansCatalog-1.2.1-x86_64.AppImage
 ```
 
 **DEB:**
 ```bash
-sudo dpkg -i poormanscatalog_1.2.0_amd64.deb
+sudo dpkg -i poormanscatalog_1.2.1_amd64.deb
 sudo apt install -f  # Fix dependencies if needed
 ```

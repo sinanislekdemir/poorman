@@ -3,7 +3,7 @@
 #
 # Run this on (or inside a container of) the oldest still-supported Ubuntu LTS
 # so the resulting AppImage only depends on an old glibc and runs on every
-# supported distribution. See .github/workflows/appimage.yml for the CI use.
+# supported distribution. See .github/workflows/release.yml for the CI use.
 
 set -euo pipefail
 
