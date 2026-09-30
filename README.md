@@ -76,9 +76,20 @@ plugin, assembles the `AppDir` and produces `PoorMansCatalog-<version>-x86_64.Ap
 #### DEB Package
 
 ```bash
-qmake && make
-equivs-build package.conf
+./scripts/build-deb.sh
 ```
+
+Run it on Ubuntu 20.04 (or inside the container shown above) and it produces
+`poormanscatalog_<version>_amd64.deb` depending on the system Qt5 libraries.
+
+#### RPM Package
+
+```bash
+./scripts/build-rpm.sh
+```
+
+Run it on Fedora/RHEL (e.g. a `fedora:44` container) and it produces
+`poormanscatalog-<version>-1.<dist>.x86_64.rpm`.
 
 ### Installation
 

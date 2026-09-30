@@ -109,3 +109,46 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: rpmbuild/RPMS/*/poormanscatalog-[0-9]*.rpm
+
+  deb:
+    needs: rpm
+    runs-on: ubuntu-latest
+    container: ubuntu:20.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install build dependencies
+        run: |
+          export DEBIAN_FRONTEND=noninteractive
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            build-essential \
+            qt5-qmake \
+            qtbase5-dev \
+            qtbase5-dev-tools \
+            qttools5-dev-tools \
+            libqt5sql5-sqlite \
+            dpkg-dev \
+            git
+
+      - name: Build DEB
+        env:
+          VERSION: ${{ github.event.inputs.version || github.ref_name }}
+        run: |
+          chmod +x scripts/build-deb.sh
+          ./scripts/build-deb.sh
+
+      - name: Upload DEB artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: PoorMansCatalog-DEB
+          path: "*.deb"
+
+      - name: Attach DEB to release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: "poormanscatalog_*.deb"
