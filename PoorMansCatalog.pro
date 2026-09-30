@@ -34,7 +34,9 @@ FORMS += \
 RESOURCES += \
     resources.qrc
 
-LIBS += -lstdc++fs
+# std::filesystem needs an explicit library on older GCC; MSVC and Apple
+# toolchains provide it in the standard library.
+!win32:!macx: LIBS += -lstdc++fs
 
 # Default rules for deployment.
 qnx: target.path = /tmp/$${TARGET}/bin

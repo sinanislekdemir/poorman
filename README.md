@@ -10,7 +10,7 @@ There are probably some parts that I totally messed up and the code might need s
 
 ## Download
 
-I have created a 64bit Deb package and a Win64 version here: https://github.com/sinanislekdemir/poorman/releases/tag/v1.2.2 
+I publish AppImage, DEB, RPM and Windows (win64) builds for every release here: https://github.com/sinanislekdemir/poorman/releases/tag/v1.2.2
 
 <img width="1144" height="671" alt="image" src="https://github.com/user-attachments/assets/54b91a25-cbf6-4ffc-9efc-b8517fab60fb" />
 
@@ -91,6 +91,13 @@ Run it on Ubuntu 20.04 (or inside the container shown above) and it produces
 Run it on Fedora/RHEL (e.g. a `fedora:44` container) and it produces
 `poormanscatalog-<version>-1.<dist>.x86_64.rpm`.
 
+#### Windows
+
+Windows builds are produced by CI (`.github/workflows/release.yml`) on
+`windows-latest` with Qt 5.15 (MSVC). The release asset is a portable zip,
+`PoorMansCatalog-<version>-win64.zip`: unzip it and run `PoorMansCatalog.exe`
+(all Qt dependencies are bundled via `windeployqt`).
+
 ### Installation
 
 **AppImage:**
@@ -104,3 +111,6 @@ chmod +x PoorMansCatalog-1.2.2-x86_64.AppImage
 sudo dpkg -i poormanscatalog_1.2.2_amd64.deb
 sudo apt install -f  # Fix dependencies if needed
 ```
+
+**Windows:** download `PoorMansCatalog-1.2.2-win64.zip`, unzip, run
+`PoorMansCatalog.exe`.
